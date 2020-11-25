@@ -36,7 +36,9 @@ struct rxq_entry {
 static pthread_t thread;
 volatile sig_atomic_t net_interrupt;
 
+static pthread_mutex_t m_devices = PTHREAD_MUTEX_INITIALIZER;
 static struct net_device *devices;
+static pthread_mutex_t m_protocols = PTHREAD_MUTEX_INITIALIZER;
 static struct net_protocol *protocols;
 
 struct net_device *
@@ -62,10 +64,12 @@ net_device_register(struct net_device *dev)
 {
     static unsigned int index = 0;
 
+    pthread_mutex_lock(&m_devices);
     dev->index = index++;
     snprintf(dev->name, sizeof(dev->name), "net%d", dev->index);
     dev->next = devices;
     devices = dev;
+    pthread_mutex_unlock(&m_devices);
 
     infof("<%s> registerd, type=0x%04x", dev->name, dev->type);
     return 0;
@@ -106,10 +110,13 @@ net_device_received(struct net_device *dev, uint16_t type, const uint8_t *data, 
 
     debugf("<%s> type=0x%04x len=%zd", dev->name, type, len);
     debugdump(data, len);
+
+    pthread_mutex_lock(&m_protocols);
     for (proto = protocols; proto; proto = proto->next) {
         if (proto->type == type) {
             entry = malloc(sizeof(struct rxq_entry) + len);
             if (!entry) {
+                pthread_mutex_unlock(&m_protocols);
                 errorf("malloc() failure");
                 return -1;
             }
@@ -119,10 +126,15 @@ net_device_received(struct net_device *dev, uint16_t type, const uint8_t *data, 
             pthread_mutex_lock(&proto->mutex);
             queue_push(&proto->queue, (struct queue_entry *)entry);
             pthread_mutex_unlock(&proto->mutex);
-            return 0;
+            break;
         }
     }
-    return -1;
+    pthread_mutex_unlock(&m_protocols);
+    if (!proto) {
+        /* unsupported protocol */
+        return -1;
+    }
+    return 0;
 }
 
 int
@@ -130,14 +142,17 @@ net_protocol_register(uint16_t type, void (*handler)(struct net_device *dev, con
 {
     struct net_protocol *entry;
 
+    pthread_mutex_lock(&m_protocols);
     for (entry = protocols; entry; entry = entry->next) {
         if (entry->type == type) {
+            pthread_mutex_unlock(&m_protocols);
             errorf("already registerd: 0x%04x", type);
             return -1;
         }
     }
     entry = malloc(sizeof(struct net_protocol));
     if (!entry) {
+        pthread_mutex_unlock(&m_protocols);
         errorf("malloc() failure");
         return -1;
     }
@@ -147,6 +162,7 @@ net_protocol_register(uint16_t type, void (*handler)(struct net_device *dev, con
     pthread_mutex_init(&entry->mutex, NULL);
     entry->handler = handler;
     protocols = entry;
+    pthread_mutex_unlock(&m_protocols);
     infof("registerd: 0x%04x", type);
     return 0;
 }
@@ -163,6 +179,7 @@ net_background_thread(void *arg)
     debugf("running...");
     while (!net_interrupt) {
         count = 0;
+        pthread_mutex_lock(&m_devices);
         for (dev = devices; dev; dev = dev->next) {
             if (dev->flags & NET_DEVICE_FLAG_UP) {
                 pthread_mutex_lock(&dev->mutex);
@@ -180,6 +197,8 @@ net_background_thread(void *arg)
                 }
             }
         }
+        pthread_mutex_unlock(&m_devices);
+        pthread_mutex_lock(&m_protocols);
         for (proto = protocols; proto; proto = proto->next) {
             pthread_mutex_lock(&proto->mutex);
             rx = (struct rxq_entry *)queue_pop(&proto->queue);
@@ -190,6 +209,7 @@ net_background_thread(void *arg)
                 count++;
             }
         }
+        pthread_mutex_unlock(&m_protocols);
         if (!count) {
             usleep(1000);
         }

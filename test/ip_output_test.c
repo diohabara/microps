@@ -11,7 +11,7 @@
 
 volatile sig_atomic_t terminate;
 
-static struct test ip_test = {0x0800, sizeof(test_data1), test_data1};
+static struct test ip_test = {17, sizeof(test_data2), test_data2};
 
 static void
 on_signal (int s)
@@ -33,6 +33,7 @@ main(void)
 {
     struct net_device *dev;
     struct ip_iface *iface;
+    ip_addr_t dst;
 
     setup();
     dev = loopback_init();
@@ -47,8 +48,9 @@ main(void)
         return -1;
     }
     ip_iface_register(dev, iface);
+    ip_addr_pton("127.0.0.1", &dst);
     while (!terminate) {
-        net_device_transmit(dev, ip_test.type, ip_test.data, ip_test.len, NULL);
+        ip_output(iface, ip_test.type, ip_test.data, ip_test.len, dst);
         sleep(1);
     }
     net_shutdown();

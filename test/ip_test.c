@@ -11,7 +11,7 @@
 
 volatile sig_atomic_t terminate;
 
-static struct test ip_test = {0x0800, sizeof(test_data), test_data};
+static struct test ip_test = {0x0800, sizeof(test_data1), test_data1};
 
 static void
 on_signal (int s)

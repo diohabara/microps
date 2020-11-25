@@ -154,8 +154,89 @@ ip_input(struct net_device *dev, const uint8_t *data, size_t len)
             return;
         }
     }
-    debugf("<%s> %zd bytes data", dev->name, len);
+    debugf("<%s> arrived %zd bytes data", dev->name, len);
     ip_dump(data, len);
+}
+
+static uint16_t
+ip_generate_id(void)
+{
+    static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+    static uint16_t id = 128;
+    uint16_t ret;
+
+    pthread_mutex_lock(&mutex);
+    ret = id++;
+    pthread_mutex_unlock(&mutex);
+    return ret;
+}
+
+static int
+ip_output_device(struct ip_iface *iface, uint8_t *data, size_t len, ip_addr_t dst)
+{
+    uint8_t ha[NET_DEVICE_ADDR_LEN];
+    char addr[IP_ADDR_STR_LEN];
+    ssize_t ret;
+
+    do {
+        if (NET_IFACE(iface)->dev->flags & NET_DEVICE_FLAG_NOARP) {
+            memset(ha, 0, sizeof(ha));
+            break;
+        }
+        if (dst == iface->broadcast || dst == IP_ADDR_BROADCAST) {
+            memcpy(ha, NET_IFACE(iface)->dev->broadcast, NET_IFACE(iface)->dev->alen);
+            break;
+        }
+        warnf("arp does not implement");
+        return -1;
+    } while (0);
+    debugf("<%s> %zd bytes data to %s", NET_IFACE(iface)->dev->name, len, ip_addr_ntop(&dst, addr, sizeof(addr)));
+    ip_dump((uint8_t *)data, len);
+    ret = net_device_transmit(NET_IFACE(iface)->dev, NET_PROTOCOL_TYPE_IP, data, len, ha);
+    if (ret != (ssize_t)len) {
+        return -1;
+    }
+    return 0;
+}
+
+static ssize_t
+ip_output_core(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, uint16_t id, uint16_t offset)
+{
+    uint8_t buf[4096];
+    struct ip_hdr *hdr;
+    uint16_t hlen;
+
+    hdr = (struct ip_hdr *)buf;
+    hlen = sizeof(struct ip_hdr);
+    hdr->vhl = (IP_VERSION_IPV4 << 4) | (hlen >> 2);
+    hdr->tos = 0;
+    hdr->len = hton16(hlen + len);
+    hdr->id = hton16(id);
+    hdr->offset = hton16(offset);
+    hdr->ttl = 0xff;
+    hdr->protocol = protocol;
+    hdr->sum = 0;
+    hdr->src = src;
+    hdr->dst = dst;
+    hdr->sum = cksum16((uint16_t *)hdr, hlen, 0);
+    memcpy(hdr + 1, data, len);
+    return ip_output_device(iface, buf, hlen + len, dst);
+}
+
+ssize_t
+ip_output(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t dst)
+{
+    uint16_t id;
+
+    if (len > (size_t)(NET_IFACE(iface)->dev->mtu - IP_HDR_SIZE_MIN)) {
+        /* flagmentation does not support */
+        return -1;
+    }
+    id = ip_generate_id();
+    if (ip_output_core(iface, protocol, data, len, iface->unicast, dst, id, 0) == -1) {
+        return -1;
+    }
+    return len;
 }
 
 int

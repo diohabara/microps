@@ -21,10 +21,18 @@ struct ip_route {
     struct ip_iface *iface;
 };
 
+struct ip_protocol {
+    struct ip_protocol *next;
+    char name[16];
+    uint8_t type;
+    void (*handler)(struct ip_iface *iface, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst);
+};
+
 const ip_addr_t IP_ADDR_ANY = 0x00000000;
 const ip_addr_t IP_ADDR_BROADCAST = 0xffffffff;
 
 static struct ip_route route_table[IP_ROUTE_TABLE_SIZE];
+static struct ip_protocol *protocols;
 
 int
 ip_addr_pton(const char *p, ip_addr_t *n) {
@@ -203,6 +211,7 @@ ip_input(struct net_device *dev, const uint8_t *data, size_t len)
     struct ip_hdr *hdr;
     uint16_t hlen;
     struct ip_iface *iface;
+    struct ip_protocol *proto;
 
     if (len < sizeof(struct ip_hdr)) {
         return;
@@ -237,6 +246,12 @@ ip_input(struct net_device *dev, const uint8_t *data, size_t len)
     }
     debugf("<%s> arrived %zd bytes data", dev->name, len);
     ip_dump(data, len);
+    for (proto = protocols; proto; proto = proto->next) {
+        if (proto->type == hdr->protocol) {
+            proto->handler(iface, (uint8_t *)(hdr + 1), len - hlen, hdr->src, hdr->dst);
+            return;
+        }
+    }
 }
 
 static uint16_t
@@ -317,7 +332,7 @@ ip_output(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, size_t 
     }
     route = ip_route_lookup(NULL, dst);
     if (!route) {
-        fprintf(stderr, "ip no route to host.\n");
+        errorf("ip no route to host");
         return -1;
     }
     if (src == IP_ADDR_ANY) {
@@ -335,6 +350,30 @@ ip_output(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, size_t 
         return -1;
     }
     return len;
+}
+
+int
+ip_protocol_register(const char *name, uint8_t type, void (*handler)(struct ip_iface *iface, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst))
+{
+    struct ip_protocol *entry;
+
+    for (entry = protocols; entry; entry = entry->next) {
+        if (entry->type == type) {
+            return -1;
+        }
+    }
+    entry = malloc(sizeof(struct ip_protocol));
+    if (!entry) {
+        errorf("malloc() failure");
+        return -1;
+    }
+    entry->next = protocols;
+    strncpy(entry->name, name, sizeof(entry->name)-1);
+    entry->type = type;
+    entry->handler = handler;
+    protocols = entry;
+    infof("registerd: %s (0x%02x)", name, type);
+    return 0;
 }
 
 int

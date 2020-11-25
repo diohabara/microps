@@ -5,6 +5,7 @@ TEST = test/loopback_test \
        test/ip_iface_test \
        test/ip_output_test \
        test/ip_route_test \
+       test/ip_protocol_test \
 
 DRIVERS = loopback.o \
 

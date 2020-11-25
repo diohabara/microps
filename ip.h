@@ -55,6 +55,8 @@ ip_iface_register(struct net_device *dev, struct ip_iface *iface);
 extern ssize_t
 ip_output(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t dst);
 extern int
+ip_protocol_register(const char *name, uint8_t type, void (*handler)(struct ip_iface *iface, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst));
+extern int
 ip_init(void);
 
 #endif

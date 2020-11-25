@@ -9,6 +9,8 @@
 
 #define NET_PROTOCOL_TYPE_IP 0x0800
 
+#define NET_IFACE_FAMILY_IPV4 1
+
 const ip_addr_t IP_ADDR_ANY = 0x00000000;
 const ip_addr_t IP_ADDR_BROADCAST = 0xffffffff;
 
@@ -71,11 +73,55 @@ ip_dump(const uint8_t *packet, size_t plen) {
     funlockfile(stderr);
 }
 
-void
+/*
+ * IP INTERFACE
+ */
+
+struct ip_iface *
+ip_iface_alloc(const char *addr, const char *netmask)
+{
+    struct ip_iface *iface;
+    ip_addr_t network;
+
+    if (!addr || !netmask) {
+        return NULL;
+    }
+    iface = malloc(sizeof(struct ip_iface));
+    if (!iface) {
+        return NULL;
+    }
+    NET_IFACE(iface)->next = NULL;
+    NET_IFACE(iface)->dev = NULL;
+    NET_IFACE(iface)->family = NET_IFACE_FAMILY_IPV4;
+    NET_IFACE(iface)->alen = IP_ADDR_LEN; 
+    if (ip_addr_pton(addr, &iface->unicast) == -1) {
+        free(iface);
+        return NULL;
+    }
+    if (ip_addr_pton(netmask, &iface->netmask) == -1) {
+        free(iface);
+        return NULL;
+    }
+    network = iface->unicast & iface->netmask;
+    iface->broadcast = network | ~iface->netmask;
+    return iface;
+}
+
+int
+ip_iface_register(struct net_device *dev, struct ip_iface *iface)
+{
+    if (net_device_add_iface(dev, NET_IFACE(iface)) == -1) {
+        return -1;
+    }
+    return 0;
+}
+
+static void
 ip_input(struct net_device *dev, const uint8_t *data, size_t len)
 {
     struct ip_hdr *hdr;
     uint16_t hlen;
+    struct ip_iface *iface;
 
     if (len < sizeof(struct ip_hdr)) {
         return;
@@ -96,6 +142,17 @@ ip_input(struct net_device *dev, const uint8_t *data, size_t len)
     if (cksum16((uint16_t *)hdr, hlen, 0) != 0) {
         errorf("ip checksum error");
         return;
+    }
+    iface = (struct ip_iface *)net_device_get_iface(dev, NET_IFACE_FAMILY_IPV4);
+    if (!iface) {
+        errorf("<%s> ip interface does not registerd", dev->name);
+        return;
+    }
+    if (hdr->dst != iface->unicast) {
+        if (hdr->dst != iface->broadcast && hdr->dst != IP_ADDR_BROADCAST) {
+            /* for other host */
+            return;
+        }
     }
     debugf("<%s> %zd bytes data", dev->name, len);
     ip_dump(data, len);

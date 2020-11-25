@@ -2,6 +2,7 @@ APPS =
 
 TEST = test/loopback_test \
        test/ip_test \
+       test/ip_iface_test \
 
 DRIVERS = loopback.o \
 

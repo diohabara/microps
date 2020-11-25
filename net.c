@@ -75,6 +75,45 @@ net_device_register(struct net_device *dev)
     return 0;
 }
 
+struct net_device *
+net_device_root(void)
+{
+    return devices;
+}
+
+int
+net_device_add_iface(struct net_device *dev, struct net_iface *iface)
+{
+    struct net_iface *entry;
+
+    pthread_mutex_lock(&dev->mutex);
+    for (entry = dev->ifaces; entry; entry = entry->next) {
+        if (entry->family == iface->family) {
+            return -1;
+        }
+    }
+    iface->next = dev->ifaces;
+    iface->dev = dev;
+    dev->ifaces = iface;
+    pthread_mutex_unlock(&dev->mutex);
+    return 0;
+}
+
+struct net_iface *
+net_device_get_iface(struct net_device *dev, int family)
+{
+    struct net_iface *entry = NULL;
+
+    pthread_mutex_lock(&dev->mutex);
+    for (entry = dev->ifaces; entry; entry = entry->next) {
+        if (entry->family == family) {
+            break;
+        }
+    }
+    pthread_mutex_unlock(&dev->mutex);
+    return entry;
+}
+
 int
 net_device_transmit(struct net_device *dev, uint16_t type, const uint8_t *data, size_t len, const void *dst)
 {

@@ -40,7 +40,7 @@ main(void)
         return -1;
     }
     while (!terminate) {
-        net_device_transmit(dev, hton16(loopback_test.type), loopback_test.data, loopback_test.len, NULL);
+        net_device_transmit(dev, loopback_test.type, loopback_test.data, loopback_test.len, NULL);
         sleep(1);
     }
     return 0;

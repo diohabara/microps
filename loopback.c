@@ -28,7 +28,7 @@ loopback_close(struct net_device *dev)
 static int
 loopback_transmit(struct net_device *dev, uint16_t type, const uint8_t *data, size_t len, const void *dst)
 {
-    debugf("<%s> type=0x%04x len=%zd", dev->name, ntoh16(type), len);
+    debugf("<%s> type=0x%04x len=%zd", dev->name, type, len);
     debugdump(data, len);
 
     if (!(dev->flags & NET_DEVICE_FLAG_UP)) {

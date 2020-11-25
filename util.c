@@ -155,3 +155,21 @@ queue_pop(struct queue_head *queue) {
     queue->num--;
     return entry;
 }
+
+uint16_t
+cksum16(uint16_t *addr, uint16_t count, uint32_t init) {
+    uint32_t sum;
+
+    sum = init;
+    while (count > 1) {
+        sum += *(addr++);
+        count -= 2;
+    }
+    if (count > 0) {
+        sum += *(uint8_t *)addr;
+    }
+    while (sum >> 16) {
+        sum = (sum & 0xffff) + (sum >> 16);
+    }
+    return ~(uint16_t)sum;
+}

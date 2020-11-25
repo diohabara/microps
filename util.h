@@ -55,4 +55,7 @@ queue_push(struct queue_head *queue, struct queue_entry *entry);
 extern struct queue_entry *
 queue_pop(struct queue_head *queue);
 
+extern uint16_t
+cksum16(uint16_t *addr, uint16_t count, uint32_t init);
+
 #endif

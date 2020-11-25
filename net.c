@@ -10,6 +10,14 @@
 #include "util.h"
 #include "net.h"
 
+struct net_protocol {
+    struct net_protocol *next;
+    uint16_t type;
+    pthread_mutex_t mutex;
+    struct queue_head queue; /* receive queue */
+    void (*handler)(struct net_device *dev, const uint8_t *data, size_t len);
+};
+
 struct txq_entry {
     struct queue_entry *next;
     uint8_t dst[NET_DEVICE_ADDR_LEN];
@@ -29,6 +37,7 @@ static pthread_t thread;
 volatile sig_atomic_t net_interrupt;
 
 static struct net_device *devices;
+static struct net_protocol *protocols;
 
 struct net_device *
 net_device_alloc(void (*setup)(struct net_device *net))
@@ -67,12 +76,12 @@ net_device_transmit(struct net_device *dev, uint16_t type, const uint8_t *data, 
 {
     struct txq_entry *entry;
 
-    debugf("<%s> type=0x%04x len=%zd dst=%p", dev->name, ntoh16(type), len, dst);
+    debugf("<%s> type=0x%04x len=%zd dst=%p", dev->name, type, len, dst);
     debugdump(data, len);
 
     entry = malloc(sizeof(struct txq_entry) + len);
     if (!entry) {
-        errorf("malloc() failure\n");
+        errorf("malloc() failure");
         return -1;
     }
     if (dst) {
@@ -92,8 +101,53 @@ net_device_transmit(struct net_device *dev, uint16_t type, const uint8_t *data, 
 int
 net_device_received(struct net_device *dev, uint16_t type, const uint8_t *data, size_t len)
 {
-    debugf("<%s> type=0x%04x len=%zd", dev->name, ntoh16(type), len);
+    struct net_protocol *proto;
+    struct rxq_entry *entry;
+
+    debugf("<%s> type=0x%04x len=%zd", dev->name, type, len);
     debugdump(data, len);
+    for (proto = protocols; proto; proto = proto->next) {
+        if (proto->type == type) {
+            entry = malloc(sizeof(struct rxq_entry) + len);
+            if (!entry) {
+                errorf("malloc() failure");
+                return -1;
+            }
+            entry->dev = dev;
+            entry->len = len;
+            memcpy(entry->data, data, len);
+            pthread_mutex_lock(&proto->mutex);
+            queue_push(&proto->queue, (struct queue_entry *)entry);
+            pthread_mutex_unlock(&proto->mutex);
+            return 0;
+        }
+    }
+    return -1;
+}
+
+int
+net_protocol_register(uint16_t type, void (*handler)(struct net_device *dev, const uint8_t *data, size_t len))
+{
+    struct net_protocol *entry;
+
+    for (entry = protocols; entry; entry = entry->next) {
+        if (entry->type == type) {
+            errorf("already registerd: 0x%04x", type);
+            return -1;
+        }
+    }
+    entry = malloc(sizeof(struct net_protocol));
+    if (!entry) {
+        errorf("malloc() failure");
+        return -1;
+    }
+    memset(entry, 0 , sizeof(struct net_protocol));
+    entry->next = protocols;
+    entry->type = type;
+    pthread_mutex_init(&entry->mutex, NULL);
+    entry->handler = handler;
+    protocols = entry;
+    infof("registerd: 0x%04x", type);
     return 0;
 }
 
@@ -102,6 +156,8 @@ net_background_thread(void *arg)
 {
     struct net_device *dev;
     struct txq_entry *tx;
+    struct net_protocol *proto;
+    struct rxq_entry *rx;
     unsigned int count;
 
     debugf("running...");
@@ -122,6 +178,16 @@ net_background_thread(void *arg)
                         count++;
                     }
                 }
+            }
+        }
+        for (proto = protocols; proto; proto = proto->next) {
+            pthread_mutex_lock(&proto->mutex);
+            rx = (struct rxq_entry *)queue_pop(&proto->queue);
+            pthread_mutex_unlock(&proto->mutex);
+            if (rx) {
+                proto->handler(rx->dev, rx->data, rx->len);
+                free(rx);
+                count++;
             }
         }
         if (!count) {

@@ -57,6 +57,9 @@ net_device_transmit(struct net_device *dev, uint16_t type, const uint8_t *data, 
 extern int
 net_device_received(struct net_device *dev, uint16_t type, const uint8_t *data, size_t len);
 
+extern int
+net_protocol_register(uint16_t type, void (*handler)(struct net_device *dev, const uint8_t *data, size_t len));
+
 extern void
 net_shutdown(void);
 extern void

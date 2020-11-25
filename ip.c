@@ -11,8 +11,20 @@
 
 #define NET_IFACE_FAMILY_IPV4 1
 
+#define IP_ROUTE_TABLE_SIZE 8
+
+struct ip_route {
+    int used;
+    ip_addr_t network;
+    ip_addr_t netmask;
+    ip_addr_t nexthop;
+    struct ip_iface *iface;
+};
+
 const ip_addr_t IP_ADDR_ANY = 0x00000000;
 const ip_addr_t IP_ADDR_BROADCAST = 0xffffffff;
+
+static struct ip_route route_table[IP_ROUTE_TABLE_SIZE];
 
 int
 ip_addr_pton(const char *p, ip_addr_t *n) {
@@ -74,16 +86,70 @@ ip_dump(const uint8_t *packet, size_t plen) {
 }
 
 /*
+ * IP ROUTING
+ */
+
+static int
+ip_route_add(ip_addr_t network, ip_addr_t netmask, ip_addr_t nexthop, struct ip_iface *iface) {
+    struct ip_route *route;
+
+    for (route = route_table; route < array_tailof(route_table); route++) {
+        if (!route->used) {
+            route->used = 1;
+            route->network = network;
+            route->netmask = netmask;
+            route->nexthop = nexthop;
+            route->iface = iface;
+            return 0;
+        }
+    }
+    return -1;
+}
+
+#if 0
+static int
+ip_route_del(struct ip_iface *iface) {
+    struct ip_route *route;
+
+    for (route = route_table; route < array_tailof(route_table); route++) {
+        if (route->used) {
+            if (route->iface == iface) {
+                route->used = 0;
+                route->network = IP_ADDR_ANY;
+                route->netmask = IP_ADDR_ANY;
+                route->nexthop = IP_ADDR_ANY;
+                route->iface = NULL;
+            }
+        }
+    }
+    return 0;
+}
+#endif
+
+static struct ip_route *
+ip_route_lookup(struct ip_iface *iface, ip_addr_t dst) {
+    struct ip_route *route, *candidate = NULL;
+
+    for (route = route_table; route < array_tailof(route_table); route++) {
+        if (route->used && (dst & route->netmask) == route->network && (!iface || route->iface == iface)) {
+            if (!candidate || ntoh32(candidate->netmask) < ntoh32(route->netmask)) {
+                candidate = route;
+            }
+        }
+    }
+    return candidate;
+}
+
+/*
  * IP INTERFACE
  */
 
 struct ip_iface *
-ip_iface_alloc(const char *addr, const char *netmask)
+ip_iface_alloc(const char *unicast, const char *netmask)
 {
     struct ip_iface *iface;
-    ip_addr_t network;
 
-    if (!addr || !netmask) {
+    if (!unicast || !netmask) {
         return NULL;
     }
     iface = malloc(sizeof(struct ip_iface));
@@ -94,7 +160,7 @@ ip_iface_alloc(const char *addr, const char *netmask)
     NET_IFACE(iface)->dev = NULL;
     NET_IFACE(iface)->family = NET_IFACE_FAMILY_IPV4;
     NET_IFACE(iface)->alen = IP_ADDR_LEN; 
-    if (ip_addr_pton(addr, &iface->unicast) == -1) {
+    if (ip_addr_pton(unicast, &iface->unicast) == -1) {
         free(iface);
         return NULL;
     }
@@ -102,15 +168,30 @@ ip_iface_alloc(const char *addr, const char *netmask)
         free(iface);
         return NULL;
     }
-    network = iface->unicast & iface->netmask;
-    iface->broadcast = network | ~iface->netmask;
+    iface->broadcast = (iface->unicast & iface->netmask) | ~iface->netmask;
     return iface;
 }
 
 int
 ip_iface_register(struct net_device *dev, struct ip_iface *iface)
 {
+    if (ip_route_add(iface->unicast & iface->netmask, iface->netmask, IP_ADDR_ANY, iface) == -1) {
+        return -1;
+    }
     if (net_device_add_iface(dev, NET_IFACE(iface)) == -1) {
+        return -1;
+    }
+    return 0;
+}
+
+int
+ip_set_default_gateway (struct ip_iface *iface, const char *gateway) {
+    ip_addr_t gw;
+
+    if (ip_addr_pton(gateway, &gw) == -1) {
+        return -1;
+    }
+    if (ip_route_add(IP_ADDR_ANY, IP_ADDR_ANY, gw, iface) == -1) {
         return -1;
     }
     return 0;
@@ -200,7 +281,7 @@ ip_output_device(struct ip_iface *iface, uint8_t *data, size_t len, ip_addr_t ds
 }
 
 static ssize_t
-ip_output_core(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, uint16_t id, uint16_t offset)
+ip_output_core(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst, ip_addr_t nexthop, uint16_t id, uint16_t offset)
 {
     uint8_t buf[4096];
     struct ip_hdr *hdr;
@@ -220,20 +301,37 @@ ip_output_core(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, si
     hdr->dst = dst;
     hdr->sum = cksum16((uint16_t *)hdr, hlen, 0);
     memcpy(hdr + 1, data, len);
-    return ip_output_device(iface, buf, hlen + len, dst);
+    return ip_output_device(iface, buf, hlen + len, nexthop);
 }
 
 ssize_t
 ip_output(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t dst)
 {
+    ip_addr_t src = IP_ADDR_ANY, nexthop;
+    struct ip_route *route;
     uint16_t id;
 
+    if (iface) {
+        /* origin source address */
+        src = iface->unicast;
+    }
+    route = ip_route_lookup(NULL, dst);
+    if (!route) {
+        fprintf(stderr, "ip no route to host.\n");
+        return -1;
+    }
+    if (src == IP_ADDR_ANY) {
+        src = route->iface->unicast;
+    }
+    nexthop = (route->nexthop != IP_ADDR_ANY) ? route->nexthop : dst;
+    /* change iface to route->iface */
+    iface = route->iface;
     if (len > (size_t)(NET_IFACE(iface)->dev->mtu - IP_HDR_SIZE_MIN)) {
         /* flagmentation does not support */
         return -1;
     }
     id = ip_generate_id();
-    if (ip_output_core(iface, protocol, data, len, iface->unicast, dst, id, 0) == -1) {
+    if (ip_output_core(iface, protocol, data, len, iface->unicast, dst, nexthop, id, 0) == -1) {
         return -1;
     }
     return len;

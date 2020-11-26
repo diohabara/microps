@@ -6,12 +6,14 @@ TEST = test/loopback_test \
        test/ip_output_test \
        test/ip_route_test \
        test/ip_protocol_test \
+       test/icmp_test \
 
 DRIVERS = loopback.o \
 
 OBJS = util.o \
        net.o \
        ip.o \
+       icmp.o \
 
 CFLAGS := $(CFLAGS) -g -W -Wall -Wno-unused-parameter -DDEBUG -I .
 

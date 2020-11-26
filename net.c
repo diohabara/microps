@@ -18,6 +18,13 @@ struct net_protocol {
     void (*handler)(struct net_device *dev, const uint8_t *data, size_t len);
 };
 
+struct net_timer {
+    struct net_timer *next;
+    struct timeval interval;
+    struct timeval last;
+    void (*handler)(void);
+};
+
 struct txq_entry {
     struct queue_entry *next;
     uint8_t dst[NET_DEVICE_ADDR_LEN];
@@ -40,6 +47,8 @@ static pthread_mutex_t m_devices = PTHREAD_MUTEX_INITIALIZER;
 static struct net_device *devices;
 static pthread_mutex_t m_protocols = PTHREAD_MUTEX_INITIALIZER;
 static struct net_protocol *protocols;
+static pthread_mutex_t m_timers = PTHREAD_MUTEX_INITIALIZER;
+static struct net_timer *timers;
 
 struct net_device *
 net_device_alloc(void (*setup)(struct net_device *net))
@@ -206,14 +215,38 @@ net_protocol_register(uint16_t type, void (*handler)(struct net_device *dev, con
     return 0;
 }
 
+int
+net_timer_register(struct timeval interval, void (*handler)(void))
+{
+    struct net_timer *entry;
+
+    pthread_mutex_lock(&m_timers);
+    entry = malloc(sizeof(struct net_timer));
+    if (!entry) {
+        pthread_mutex_unlock(&m_timers);
+        errorf("malloc() failure");
+        return -1;
+    }
+    entry->next = timers;
+    entry->interval = interval;
+    gettimeofday(&entry->last, NULL);
+    entry->handler = handler;
+    timers = entry;
+    pthread_mutex_unlock(&m_timers);
+    infof("registerd: interval={%d, %d}", interval.tv_sec, interval.tv_usec);
+    return 0;
+}
+
 static void *
 net_background_thread(void *arg)
 {
+    unsigned int count;
     struct net_device *dev;
     struct txq_entry *tx;
     struct net_protocol *proto;
     struct rxq_entry *rx;
-    unsigned int count;
+    struct net_timer *timer;
+    struct timeval now, diff;
 
     debugf("running...");
     while (!net_interrupt) {
@@ -249,6 +282,16 @@ net_background_thread(void *arg)
             }
         }
         pthread_mutex_unlock(&m_protocols);
+        pthread_mutex_lock(&m_timers);
+        for (timer = timers; timer; timer = timer->next) {
+            gettimeofday(&now, NULL);
+            timersub(&now, &timer->last, &diff);
+            if (timercmp(&timer->interval, &diff, <) != 0) { /* true (!0) or false (0) */
+                timer->handler();
+                timer->last = now;
+            }
+        }
+        pthread_mutex_unlock(&m_timers);
         if (!count) {
             usleep(1000);
         }

@@ -9,6 +9,7 @@ TEST = test/loopback_test \
        test/icmp_test \
 
 DRIVERS = loopback.o \
+          ether.o \
 
 OBJS = util.o \
        net.o \

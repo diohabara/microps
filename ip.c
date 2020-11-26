@@ -322,31 +322,34 @@ ip_output_core(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, si
 ssize_t
 ip_output(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t dst)
 {
-    ip_addr_t src = IP_ADDR_ANY, nexthop;
+    ip_addr_t src, nexthop;
     struct ip_route *route;
     uint16_t id;
 
-    if (iface) {
-        /* origin source address */
+    if (dst == IP_ADDR_BROADCAST) {
+        if (!iface) {
+            errorf("need specify iface to send to broadcast address");
+            return -1;
+        }
         src = iface->unicast;
+        nexthop = dst;
+    } else {
+        route = ip_route_lookup(iface, dst);
+        if (!route) {
+            errorf("ip no route to host");
+            return -1;
+        }
+        src = iface ? iface->unicast : route->iface->unicast;
+        nexthop = (route->nexthop != IP_ADDR_ANY) ? route->nexthop : dst;
+        /* change iface to route->iface */
+        iface = route->iface;
     }
-    route = ip_route_lookup(NULL, dst);
-    if (!route) {
-        errorf("ip no route to host");
-        return -1;
-    }
-    if (src == IP_ADDR_ANY) {
-        src = route->iface->unicast;
-    }
-    nexthop = (route->nexthop != IP_ADDR_ANY) ? route->nexthop : dst;
-    /* change iface to route->iface */
-    iface = route->iface;
     if (len > (size_t)(NET_IFACE(iface)->dev->mtu - IP_HDR_SIZE_MIN)) {
         /* flagmentation does not support */
         return -1;
     }
     id = ip_generate_id();
-    if (ip_output_core(iface, protocol, data, len, iface->unicast, dst, nexthop, id, 0) == -1) {
+    if (ip_output_core(iface, protocol, data, len, src, dst, nexthop, id, 0) == -1) {
         return -1;
     }
     return len;

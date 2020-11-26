@@ -24,6 +24,7 @@
 #define ARP_OP_REPLY 2
 
 #define ARP_TABLE_SIZE 4096
+#define ARP_TABLE_TIMEOUT 300 /* seconds */
 
 #define ARP_ENTRY_STATE_FREE 0
 #define ARP_ENTRY_STATE_INCOMPLETE 1 
@@ -146,6 +147,34 @@ arp_table_insert(ip_addr_t pa, const uint8_t *ha)
     memcpy(entry->ha, ha, ETHER_ADDR_LEN);
     time(&entry->timestamp);
     return 0;
+}
+
+static void
+arp_entry_clear(struct arp_entry *entry)
+{
+    entry->state = ARP_ENTRY_STATE_FREE;
+    entry->pa = 0;
+    memset(entry->ha, 0, ETHER_ADDR_LEN);
+    entry->timestamp = 0;
+}
+
+static void
+arp_table_patrol(void)
+{
+    struct arp_entry *entry;
+    time_t now;
+    char addr1[IP_ADDR_STR_LEN], addr2[ETHER_ADDR_STR_LEN];
+
+    pthread_mutex_lock(&mutex);
+    time(&now);
+    for (entry = arp_table; entry < array_tailof(arp_table); entry++) {
+        if (entry->state != ARP_ENTRY_STATE_FREE && now - entry->timestamp > ARP_TABLE_TIMEOUT) {
+            debugf("arp entry timeout: %s %s",
+                ip_addr_ntop(&entry->pa, addr1, sizeof(addr1)), ether_addr_ntop(entry->ha, addr2, sizeof(addr2)));
+            arp_entry_clear(entry);
+        }
+    }
+    pthread_mutex_unlock(&mutex);
 }
 
 static int
@@ -275,6 +304,9 @@ arp_resolve(struct net_iface *iface, ip_addr_t pa, uint8_t *ha)
 int
 arp_init(void)
 {
+    struct timeval interval = {10,0};
+
     net_protocol_register(NET_PROTOCOL_TYPE_ARP, arp_input);
+    net_timer_register(interval, arp_table_patrol);
     return 0;
 }

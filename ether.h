@@ -8,6 +8,8 @@
 
 #include "net.h"
 
+#define NET_DEVICE_TYPE_ETHER 2
+
 #define ETHER_ADDR_LEN 6
 #define ETHER_ADDR_STR_LEN 18 /* "xx:xx:xx:xx:xx:xx\0" */
 

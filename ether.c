@@ -7,8 +7,6 @@
 #include "net.h"
 #include "ether.h"
 
-#define NET_DEVICE_TYPE_ETHER 2
-
 const uint8_t ETHER_ADDR_ANY[ETHER_ADDR_LEN] = {"\x00\x00\x00\x00\x00\x00"};
 const uint8_t ETHER_ADDR_BROADCAST[ETHER_ADDR_LEN] = {"\xff\xff\xff\xff\xff\xff"};
 
@@ -134,4 +132,5 @@ ether_setup_helper(struct net_device *dev)
     dev->flags = NET_DEVICE_FLAG_BROADCAST;
     dev->hlen = ETHER_HDR_SIZE;
     dev->alen = ETHER_ADDR_LEN;
+    memcpy(dev->broadcast, ETHER_ADDR_BROADCAST, ETHER_ADDR_LEN);
 }

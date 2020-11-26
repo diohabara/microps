@@ -8,6 +8,7 @@ TEST = test/loopback_test \
        test/ip_protocol_test \
        test/icmp_test \
        test/ether_test \
+       test/arp_test \
 
 DRIVERS = loopback.o \
           ether.o \
@@ -16,6 +17,7 @@ OBJS = util.o \
        net.o \
        ip.o \
        icmp.o \
+       arp.o \
 
 CFLAGS := $(CFLAGS) -g -W -Wall -Wno-unused-parameter -DDEBUG -I .
 

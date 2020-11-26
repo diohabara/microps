@@ -16,6 +16,8 @@
 
 #define IP_VERSION_IPV4 4
 
+#define NET_IFACE_FAMILY_IPV4 1
+
 typedef uint32_t ip_addr_t;
 
 extern const ip_addr_t IP_ADDR_ANY;

@@ -5,11 +5,10 @@
 
 #include "util.h"
 #include "net.h"
+#include "arp.h"
 #include "ip.h"
 
 #define NET_PROTOCOL_TYPE_IP 0x0800
-
-#define NET_IFACE_FAMILY_IPV4 1
 
 #define IP_ROUTE_TABLE_SIZE 8
 
@@ -283,8 +282,10 @@ ip_output_device(struct ip_iface *iface, uint8_t *data, size_t len, ip_addr_t ds
             memcpy(ha, NET_IFACE(iface)->dev->broadcast, NET_IFACE(iface)->dev->alen);
             break;
         }
-        warnf("arp does not implement");
-        return -1;
+        ret = arp_resolve(NET_IFACE(iface), dst, ha);
+        if (ret != ARP_RESOLVE_FOUND) {
+            return ret;
+        }
     } while (0);
     debugf("<%s> %zd bytes data to %s", NET_IFACE(iface)->dev->name, len, ip_addr_ntop(&dst, addr, sizeof(addr)));
     ip_dump((uint8_t *)data, len);

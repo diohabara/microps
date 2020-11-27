@@ -140,6 +140,7 @@ arp_table_insert(ip_addr_t pa, const uint8_t *ha)
 
     entry = arp_table_freespace();
     if (!entry) {
+        errorf("no free space");
         return -1;
     }
     entry->state = ARP_ENTRY_STATE_RESOLVED;
@@ -194,12 +195,9 @@ arp_request(struct net_iface *iface, ip_addr_t tpa)
     memcpy(request.spa, &((struct ip_iface *)iface)->unicast, IP_ADDR_LEN);
     memset(request.tha, 0, ETHER_ADDR_LEN);
     memcpy(request.tpa, &tpa, IP_ADDR_LEN);
-    debugf("arp request");
+    debugf("%zd bytes data request", sizeof(request));
     arp_dump((uint8_t *)&request, sizeof(request));
-    if (net_device_output(iface->dev, ETHER_TYPE_ARP, (uint8_t *)&request, sizeof(request), iface->dev->broadcast) == -1) {
-        return -1;
-    }
-    return 0;
+    return net_device_output(iface->dev, ETHER_TYPE_ARP, (uint8_t *)&request, sizeof(request), iface->dev->broadcast);
 }
 
 static int
@@ -219,12 +217,9 @@ arp_reply(struct net_iface *iface, const uint8_t *tha, ip_addr_t tpa, const uint
     memcpy(reply.spa, &((struct ip_iface *)iface)->unicast, IP_ADDR_LEN);
     memcpy(reply.tha, tha, ETHER_ADDR_LEN);
     memcpy(reply.tpa, &tpa, IP_ADDR_LEN);
-    debugf("arp reply");
+    debugf("%zd bytes data reply", sizeof(reply));
     arp_dump((uint8_t *)&reply, sizeof(reply));
-    if (net_device_output(iface->dev, ETHER_TYPE_ARP, (uint8_t *)&reply, sizeof(reply), dst) < 0) {
-        return -1;
-    }
-    return 0;
+    return net_device_output(iface->dev, ETHER_TYPE_ARP, (uint8_t *)&reply, sizeof(reply), dst);
 }
 
 static void
@@ -236,16 +231,19 @@ arp_input(struct net_device *dev, const uint8_t *data, size_t len)
     struct net_iface *iface;
 
     if (len < sizeof(struct arp_ether)) {
+        debugf("data is too short");
         return;
     }
     message = (struct arp_ether *)data;
     if (ntoh16(message->hdr.hrd) != ARP_HRD_ETHER || message->hdr.hln != ETHER_ADDR_LEN) {
+        debugf("unsupported hardware address");
         return;
     }
     if (ntoh16(message->hdr.pro) != ARP_PRO_IP || message->hdr.pln != IP_ADDR_LEN) {
+        debugf("unsupported protocol address");
         return;
     }
-    debugf("received");
+    debugf("%zd bytes data recived");
     arp_dump(data, len);
     memcpy(&spa, message->spa, sizeof(spa));
     memcpy(&tpa, message->tpa, sizeof(tpa));

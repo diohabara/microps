@@ -110,6 +110,7 @@ ip_route_add(ip_addr_t network, ip_addr_t netmask, ip_addr_t nexthop, struct ip_
             return 0;
         }
     }
+    errorf("no free space");
     return -1;
 }
 
@@ -157,10 +158,12 @@ ip_iface_alloc(const char *unicast, const char *netmask)
     struct ip_iface *iface;
 
     if (!unicast || !netmask) {
+        errorf("invalid arguments");
         return NULL;
     }
     iface = malloc(sizeof(struct ip_iface));
     if (!iface) {
+        errorf("malloc() failure");
         return NULL;
     }
     NET_IFACE(iface)->next = NULL;
@@ -168,10 +171,12 @@ ip_iface_alloc(const char *unicast, const char *netmask)
     NET_IFACE(iface)->family = NET_IFACE_FAMILY_IPV4;
     NET_IFACE(iface)->alen = IP_ADDR_LEN; 
     if (ip_addr_pton(unicast, &iface->unicast) == -1) {
+        errorf("ip_addr_pton() failure, unicast=%s", unicast);
         free(iface);
         return NULL;
     }
     if (ip_addr_pton(netmask, &iface->netmask) == -1) {
+        errorf("ip_addr_pton() failure, netmask=%s", netmask);
         free(iface);
         return NULL;
     }
@@ -183,9 +188,11 @@ int
 ip_iface_register(struct net_device *dev, struct ip_iface *iface)
 {
     if (ip_route_add(iface->unicast & iface->netmask, iface->netmask, IP_ADDR_ANY, iface) == -1) {
+        errorf("ip_route_add() failure");
         return -1;
     }
     if (net_device_add_iface(dev, NET_IFACE(iface)) == -1) {
+        errorf("net_device_add_iface() failure");
         return -1;
     }
     return 0;
@@ -196,9 +203,11 @@ ip_set_default_gateway (struct ip_iface *iface, const char *gateway) {
     ip_addr_t gw;
 
     if (ip_addr_pton(gateway, &gw) == -1) {
+        errorf("ip_addr_pton() failure, gateway=%s", gateway);
         return -1;
     }
     if (ip_route_add(IP_ADDR_ANY, IP_ADDR_ANY, gw, iface) == -1) {
+        errorf("ip_route_add() failure");
         return -1;
     }
     return 0;
@@ -213,10 +222,12 @@ ip_input(struct net_device *dev, const uint8_t *data, size_t len)
     struct ip_protocol *proto;
 
     if (len < sizeof(struct ip_hdr)) {
+        errorf("ip packet too small");
         return;
     }
     hdr = (struct ip_hdr *)data;
     if ((hdr->vhl >> 4) != IP_VERSION_IPV4) {
+        errorf("ip packet version error");
         return;
     }
     hlen = (hdr->vhl & 0x0f) << 2;
@@ -229,7 +240,7 @@ ip_input(struct net_device *dev, const uint8_t *data, size_t len)
         return;
     }
     if (cksum16((uint16_t *)hdr, hlen, 0) != 0) {
-        errorf("ip checksum error");
+        errorf("ip pakcet checksum error");
         return;
     }
     iface = (struct ip_iface *)net_device_get_iface(dev, NET_IFACE_FAMILY_IPV4);
@@ -284,16 +295,13 @@ ip_output_device(struct ip_iface *iface, uint8_t *data, size_t len, ip_addr_t ds
         }
         ret = arp_resolve(NET_IFACE(iface), dst, ha);
         if (ret != ARP_RESOLVE_FOUND) {
+            /* unresolved at the moment */
             return ret;
         }
     } while (0);
     debugf("<%s> %zd bytes data to %s", NET_IFACE(iface)->dev->name, len, ip_addr_ntop(&dst, addr, sizeof(addr)));
     ip_dump((uint8_t *)data, len);
-    ret = net_device_output(NET_IFACE(iface)->dev, NET_PROTOCOL_TYPE_IP, data, len, ha);
-    if (ret != (ssize_t)len) {
-        return -1;
-    }
-    return 0;
+    return net_device_output(NET_IFACE(iface)->dev, NET_PROTOCOL_TYPE_IP, data, len, ha);
 }
 
 static ssize_t
@@ -347,10 +355,12 @@ ip_output(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, size_t 
     }
     if (len > (size_t)(NET_IFACE(iface)->dev->mtu - IP_HDR_SIZE_MIN)) {
         /* flagmentation does not support */
+        errorf("data is too long");
         return -1;
     }
     id = ip_generate_id();
     if (ip_output_core(iface, protocol, data, len, src, dst, nexthop, id, 0) == -1) {
+        errorf("ip_output_core() failure");
         return -1;
     }
     return len;
@@ -363,6 +373,7 @@ ip_protocol_register(const char *name, uint8_t type, void (*handler)(struct ip_i
 
     for (entry = protocols; entry; entry = entry->next) {
         if (entry->type == type) {
+            errorf("already registered: %s (0x%02x)", entry->name, entry->type);
             return -1;
         }
     }

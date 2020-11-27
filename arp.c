@@ -196,7 +196,7 @@ arp_request(struct net_iface *iface, ip_addr_t tpa)
     memcpy(request.tpa, &tpa, IP_ADDR_LEN);
     debugf("arp request");
     arp_dump((uint8_t *)&request, sizeof(request));
-    if (net_device_transmit(iface->dev, ETHER_TYPE_ARP, (uint8_t *)&request, sizeof(request), iface->dev->broadcast) == -1) {
+    if (net_device_output(iface->dev, ETHER_TYPE_ARP, (uint8_t *)&request, sizeof(request), iface->dev->broadcast) == -1) {
         return -1;
     }
     return 0;
@@ -221,7 +221,7 @@ arp_reply(struct net_iface *iface, const uint8_t *tha, ip_addr_t tpa, const uint
     memcpy(reply.tpa, &tpa, IP_ADDR_LEN);
     debugf("arp reply");
     arp_dump((uint8_t *)&reply, sizeof(reply));
-    if (net_device_transmit(iface->dev, ETHER_TYPE_ARP, (uint8_t *)&reply, sizeof(reply), dst) < 0) {
+    if (net_device_output(iface->dev, ETHER_TYPE_ARP, (uint8_t *)&reply, sizeof(reply), dst) < 0) {
         return -1;
     }
     return 0;

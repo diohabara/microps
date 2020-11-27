@@ -14,7 +14,7 @@ struct net_protocol {
     struct net_protocol *next;
     uint16_t type;
     pthread_mutex_t mutex;
-    struct queue_head queue; /* receive queue */
+    struct queue_head queue; /* input queue */
     void (*handler)(struct net_device *dev, const uint8_t *data, size_t len);
 };
 
@@ -25,7 +25,7 @@ struct net_timer {
     void (*handler)(void);
 };
 
-struct txq_entry {
+struct net_device_queue_entry {
     struct queue_entry *next;
     uint8_t dst[NET_DEVICE_ADDR_LEN];
     uint16_t type;
@@ -33,7 +33,7 @@ struct txq_entry {
     uint8_t data[0];
 };
 
-struct rxq_entry {
+struct net_protocol_queue_entry {
     struct queue_entry *next;
     struct net_device *dev;
     size_t len;
@@ -45,8 +45,10 @@ volatile sig_atomic_t net_interrupt;
 
 static pthread_mutex_t m_devices = PTHREAD_MUTEX_INITIALIZER;
 static struct net_device *devices;
+
 static pthread_mutex_t m_protocols = PTHREAD_MUTEX_INITIALIZER;
 static struct net_protocol *protocols;
+
 static pthread_mutex_t m_timers = PTHREAD_MUTEX_INITIALIZER;
 static struct net_timer *timers;
 
@@ -124,14 +126,14 @@ net_device_get_iface(struct net_device *dev, int family)
 }
 
 int
-net_device_transmit(struct net_device *dev, uint16_t type, const uint8_t *data, size_t len, const void *dst)
+net_device_output(struct net_device *dev, uint16_t type, const uint8_t *data, size_t len, const void *dst)
 {
-    struct txq_entry *entry;
+    struct net_device_queue_entry *entry;
 
     debugf("<%s> type=0x%04x len=%zd dst=%p", dev->name, type, len, dst);
     debugdump(data, len);
 
-    entry = malloc(sizeof(struct txq_entry) + len);
+    entry = malloc(sizeof(struct net_device_queue_entry) + len);
     if (!entry) {
         errorf("malloc() failure");
         return -1;
@@ -151,10 +153,10 @@ net_device_transmit(struct net_device *dev, uint16_t type, const uint8_t *data, 
 }
 
 int
-net_device_received(struct net_device *dev, uint16_t type, const uint8_t *data, size_t len)
+net_device_input(struct net_device *dev, uint16_t type, const uint8_t *data, size_t len)
 {
     struct net_protocol *proto;
-    struct rxq_entry *entry;
+    struct net_protocol_queue_entry *entry;
 
     debugf("<%s> type=0x%04x len=%zd", dev->name, type, len);
     debugdump(data, len);
@@ -162,7 +164,7 @@ net_device_received(struct net_device *dev, uint16_t type, const uint8_t *data, 
     pthread_mutex_lock(&m_protocols);
     for (proto = protocols; proto; proto = proto->next) {
         if (proto->type == type) {
-            entry = malloc(sizeof(struct rxq_entry) + len);
+            entry = malloc(sizeof(struct net_protocol_queue_entry) + len);
             if (!entry) {
                 pthread_mutex_unlock(&m_protocols);
                 errorf("malloc() failure");
@@ -242,9 +244,9 @@ net_background_thread(void *arg)
 {
     unsigned int count;
     struct net_device *dev;
-    struct txq_entry *tx;
+    struct net_device_queue_entry *out;
     struct net_protocol *proto;
-    struct rxq_entry *rx;
+    struct net_protocol_queue_entry *in;
     struct net_timer *timer;
     struct timeval now, diff;
 
@@ -255,11 +257,11 @@ net_background_thread(void *arg)
         for (dev = devices; dev; dev = dev->next) {
             if (dev->flags & NET_DEVICE_FLAG_UP) {
                 pthread_mutex_lock(&dev->mutex);
-                tx = (struct txq_entry *)queue_pop(&dev->queue);
+                out = (struct net_device_queue_entry *)queue_pop(&dev->queue);
                 pthread_mutex_unlock(&dev->mutex);
-                if (tx) {
-                    dev->ops->transmit(dev, tx->type, tx->data, tx->len, tx->dst);
-                    free(tx);
+                if (out) {
+                    dev->ops->transmit(dev, out->type, out->data, out->len, out->dst);
+                    free(out);
                     count++;
                 }
                 if (dev->ops->poll) {
@@ -273,11 +275,11 @@ net_background_thread(void *arg)
         pthread_mutex_lock(&m_protocols);
         for (proto = protocols; proto; proto = proto->next) {
             pthread_mutex_lock(&proto->mutex);
-            rx = (struct rxq_entry *)queue_pop(&proto->queue);
+            in = (struct net_protocol_queue_entry *)queue_pop(&proto->queue);
             pthread_mutex_unlock(&proto->mutex);
-            if (rx) {
-                proto->handler(rx->dev, rx->data, rx->len);
-                free(rx);
+            if (in) {
+                proto->handler(in->dev, in->data, in->len);
+                free(in);
                 count++;
             }
         }

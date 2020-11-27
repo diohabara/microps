@@ -289,7 +289,7 @@ ip_output_device(struct ip_iface *iface, uint8_t *data, size_t len, ip_addr_t ds
     } while (0);
     debugf("<%s> %zd bytes data to %s", NET_IFACE(iface)->dev->name, len, ip_addr_ntop(&dst, addr, sizeof(addr)));
     ip_dump((uint8_t *)data, len);
-    ret = net_device_transmit(NET_IFACE(iface)->dev, NET_PROTOCOL_TYPE_IP, data, len, ha);
+    ret = net_device_output(NET_IFACE(iface)->dev, NET_PROTOCOL_TYPE_IP, data, len, ha);
     if (ret != (ssize_t)len) {
         return -1;
     }

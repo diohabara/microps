@@ -59,7 +59,7 @@ struct net_device {
     };
     struct net_device_ops *ops;
     pthread_mutex_t mutex;
-    struct queue_head queue; /* transmit queue */
+    struct queue_head queue; /* output queue */
     void *priv;
 };
 
@@ -74,9 +74,9 @@ net_device_add_iface(struct net_device *dev, struct net_iface *iface);
 extern struct net_iface *
 net_device_get_iface(struct net_device *dev, int family);
 extern int
-net_device_transmit(struct net_device *dev, uint16_t type, const uint8_t *data, size_t len, const void *dst);
+net_device_output(struct net_device *dev, uint16_t type, const uint8_t *data, size_t len, const void *dst);
 extern int
-net_device_received(struct net_device *dev, uint16_t type, const uint8_t *data, size_t len);
+net_device_input(struct net_device *dev, uint16_t type, const uint8_t *data, size_t len);
 
 extern int
 net_protocol_register(uint16_t type, void (*handler)(struct net_device *dev, const uint8_t *data, size_t len));

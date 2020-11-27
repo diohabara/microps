@@ -121,7 +121,7 @@ ether_poll_helper(struct net_device *dev, ssize_t (*callback)(struct net_device 
     }
     debugf("<%s> %zd bytes data", dev->name, flen);
     ether_dump(frame, flen);
-    return net_device_received(dev, ntoh16(hdr->type), (uint8_t *)(hdr + 1), flen - sizeof(struct ether_hdr));
+    return net_device_input(dev, ntoh16(hdr->type), (uint8_t *)(hdr + 1), flen - sizeof(struct ether_hdr));
 }
 
 void

@@ -35,7 +35,7 @@ loopback_transmit(struct net_device *dev, uint16_t type, const uint8_t *data, si
         errorf("<%s> is down", dev->name);
         return -1;
     }
-    net_device_received(dev, type, data, len);
+    net_device_input(dev, type, data, len);
     return 0;
 }
 

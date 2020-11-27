@@ -42,7 +42,7 @@ main(void)
         return -1;
     }
     while (!terminate) {
-        net_device_transmit(dev, ip_test.type, ip_test.data, ip_test.len, NULL);
+        net_device_output(dev, ip_test.type, ip_test.data, ip_test.len, NULL);
         sleep(1);
     }
     net_shutdown();

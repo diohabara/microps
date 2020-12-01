@@ -10,6 +10,7 @@ TEST = test/loopback_test \
        test/ether_test \
        test/arp_test \
        test/udp_test \
+       test/udp_socket_test \
 
 DRIVERS = loopback.o \
           ether.o \

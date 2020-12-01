@@ -2,6 +2,7 @@
 #define NET_H
 
 #include <stdint.h>
+#include <signal.h>
 #include <pthread.h>
 #include <sys/types.h>
 
@@ -20,6 +21,8 @@
 #define NET_DEVICE_ADDR_LEN 16
 
 #define NET_IFACE(x) ((struct net_iface *)(x))
+
+extern volatile sig_atomic_t net_interrupt;
 
 struct net_device;
 
@@ -73,6 +76,8 @@ extern int
 net_device_add_iface(struct net_device *dev, struct net_iface *iface);
 extern struct net_iface *
 net_device_get_iface(struct net_device *dev, int family);
+extern struct net_iface *
+net_device_select_iface(uint8_t family, int (compare)(struct net_iface *iface, void *addr), void *addr);
 extern int
 net_device_output(struct net_device *dev, uint16_t type, const uint8_t *data, size_t len, const void *dst);
 extern int

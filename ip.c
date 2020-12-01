@@ -198,6 +198,27 @@ ip_iface_register(struct net_device *dev, struct ip_iface *iface)
     return 0;
 }
 
+static int
+ip_iface_select(struct net_iface *iface, void *addr) {
+    return ((struct ip_iface *)iface)->unicast == *(ip_addr_t *)addr ? 1 : 0;
+}
+
+struct ip_iface *
+ip_iface_by_addr(ip_addr_t addr) {
+    return (struct ip_iface *)net_device_select_iface(NET_IFACE_FAMILY_IPV4, ip_iface_select, &addr);
+}
+
+struct ip_iface *
+ip_iface_by_peer(ip_addr_t peer) {
+    struct ip_route *route;
+
+    route = ip_route_lookup(NULL, peer);
+    if (!route) {
+        return NULL;
+    }
+    return route->iface;
+}
+
 int
 ip_set_default_gateway (struct ip_iface *iface, const char *gateway) {
     ip_addr_t gw;

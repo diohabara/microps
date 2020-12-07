@@ -64,7 +64,7 @@ udp_dump(const uint8_t *data, size_t len)
     fprintf(stderr, " sport: %u\n", ntoh16(hdr->sport));
     fprintf(stderr, " dport: %u\n", ntoh16(hdr->dport));
     fprintf(stderr, "   len: %u\n", ntoh16(hdr->len));
-    fprintf(stderr, "   sum: 0x%04x\n", ntoh16(hdr->len));
+    fprintf(stderr, "   sum: 0x%04x\n", ntoh16(hdr->sum));
     hexdump(stderr, data, len);
     funlockfile(stderr);
 }

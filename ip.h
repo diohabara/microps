@@ -44,6 +44,11 @@ struct ip_iface {
     ip_addr_t broadcast;
 };
 
+struct socket {
+    ip_addr_t addr;
+    uint16_t port;
+};
+
 extern int
 ip_addr_pton(const char *p, ip_addr_t *n);
 extern char *

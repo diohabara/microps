@@ -10,7 +10,9 @@
 
 #define NET_DEVICE_TYPE_ETHER 2
 
+#ifndef ETHER_ADDR_LEN
 #define ETHER_ADDR_LEN 6
+#endif
 #define ETHER_ADDR_STR_LEN 18 /* "xx:xx:xx:xx:xx:xx\0" */
 
 #define ETHER_HDR_SIZE 14
@@ -54,7 +56,7 @@ ether_poll_helper(struct net_device *dev, ssize_t (*callback)(struct net_device 
 extern void
 ether_setup_helper(struct net_device *net_device);
 
-extern int
-ether_init (void);
+extern struct net_device *
+ether_init(const char *name);
 
 #endif

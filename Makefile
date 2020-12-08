@@ -11,6 +11,7 @@ TEST = test/loopback_test \
        test/arp_test \
        test/udp_test \
        test/udp_socket_test \
+       test/ether_linux_test \
 
 DRIVERS = loopback.o \
           ether.o \
@@ -26,7 +27,7 @@ CFLAGS := $(CFLAGS) -g -W -Wall -Wno-unused-parameter -DDEBUG -I .
 
 ifeq ($(shell uname),Linux)
        CFLAGS := $(CFLAGS) -pthread
-       DRIVERS := $(DRIVERS) ether_tap_linux.o
+       DRIVERS := $(DRIVERS) ether_tap_linux.o ether_linux.o
 endif
 
 .SUFFIXES:

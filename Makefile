@@ -12,6 +12,8 @@ TEST = test/loopback_test \
        test/udp_test \
        test/udp_socket_test \
        test/ether_linux_test \
+       test/tcp_server_test \
+       test/tcp_client_test \
 
 DRIVERS = loopback.o \
           ether.o \
@@ -22,6 +24,7 @@ OBJS = util.o \
        icmp.o \
        arp.o \
        udp.o \
+       tcp.o \
 
 CFLAGS := $(CFLAGS) -g -W -Wall -Wno-unused-parameter -DDEBUG -I .
 

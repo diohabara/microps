@@ -187,6 +187,8 @@ ip_iface_alloc(const char *unicast, const char *netmask)
 int
 ip_iface_register(struct net_device *dev, struct ip_iface *iface)
 {
+    char addr1[IP_ADDR_STR_LEN], addr2[IP_ADDR_STR_LEN];
+
     if (ip_route_add(iface->unicast & iface->netmask, iface->netmask, IP_ADDR_ANY, iface) == -1) {
         errorf("ip_route_add() failure");
         return -1;
@@ -195,12 +197,13 @@ ip_iface_register(struct net_device *dev, struct ip_iface *iface)
         errorf("net_device_add_iface() failure");
         return -1;
     }
+    infof("registerd: %s %s", ip_addr_ntop(&iface->unicast, addr1, sizeof(addr1)), ip_addr_ntop(&iface->netmask, addr2, sizeof(addr2)));
     return 0;
 }
 
 static int
 ip_iface_select(struct net_iface *iface, void *addr) {
-    return ((struct ip_iface *)iface)->unicast == *(ip_addr_t *)addr ? 1 : 0;
+    return ((struct ip_iface *)iface)->unicast == *(ip_addr_t *)addr ? 0 : -1;
 }
 
 struct ip_iface *

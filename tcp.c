@@ -6,6 +6,7 @@
 #include <sys/time.h>
 #include <pthread.h>
 
+#include "net.h"
 #include "ip.h"
 #include "tcp.h"
 #include "util.h"
@@ -897,9 +898,44 @@ tcp_cmd_close(struct tcp_pcb *pcb)
     return ret;
 }
 
+static void
+tcp_timer(void)
+{
+    struct timeval timestamp, diff;
+    struct tcp_pcb *pcb;
+    struct tcp_txq_entry *entry;
+    struct ip_iface *iface;
+
+    pthread_mutex_lock(&mutex);
+    gettimeofday(&timestamp, NULL);
+    for (pcb = pcbs; pcb; pcb = pcb->next) {
+        while (pcb->txq.head) {
+            entry = pcb->txq.head;
+            if (ntoh32(entry->segment->seq) >= pcb->snd.una) {
+                break;
+            }
+            pcb->txq.head = entry->next;
+            free(entry->segment);
+            free(entry);
+        }
+        for (entry = pcb->txq.head; entry; entry = entry->next) {
+            timersub(&timestamp, &entry->timestamp, &diff);
+            if (diff.tv_sec > 3) {
+                iface = ip_iface_by_addr(pcb->self.addr);
+                ip_output(iface, IP_PROTOCOL_TCP, (uint8_t *)entry->segment, entry->len, pcb->peer.addr);
+                entry->timestamp = timestamp;
+            }
+        }
+    }
+    pthread_mutex_unlock(&mutex);
+}
+
 int
 tcp_init(void)
 {
+    struct timeval interval = {0,100000};
+
     ip_protocol_register("TCP", IP_PROTOCOL_TCP, tcp_input);
+    net_timer_register(interval, tcp_timer);
     return 0;
 }

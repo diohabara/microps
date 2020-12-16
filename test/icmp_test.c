@@ -52,7 +52,7 @@ main(void)
     ip_iface_register(dev, iface);
     ip_addr_pton("127.255.255.255", &dst);
     while (!terminate) {
-        icmp_output(iface, ICMP_TYPE_ECHO, 0, 0, data, sizeof(data), dst);
+        icmp_output(ICMP_TYPE_ECHO, 0, 0, data, sizeof(data), iface->unicast, dst);
         sleep(1);
     }
     net_shutdown();

@@ -39,7 +39,7 @@
 #define ICMP_COPY_LEN(x) ((((x)->vhl & 0x0f) << 2) + 8)
 
 extern int
-icmp_output(struct ip_iface *iface, uint8_t type, uint8_t code, uint32_t values, uint8_t *data, size_t len, ip_addr_t dst);
+icmp_output(uint8_t type, uint8_t code, uint32_t values, uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst);
 extern int
 icmp_init(void);
 

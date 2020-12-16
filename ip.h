@@ -39,6 +39,7 @@ struct ip_hdr {
 
 struct ip_iface {
     struct net_iface iface;
+    struct ip_iface *next;
     ip_addr_t unicast;
     ip_addr_t netmask;
     ip_addr_t broadcast;
@@ -67,9 +68,9 @@ extern int
 ip_set_default_gateway(struct ip_iface *iface, const char *gateway);
 
 extern ssize_t
-ip_output(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t dst);
+ip_output(uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst);
 extern int
-ip_protocol_register(const char *name, uint8_t type, void (*handler)(struct ip_iface *iface, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst));
+ip_protocol_register(const char *name, uint8_t type, void (*handler)(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst));
 extern int
 ip_init(void);
 

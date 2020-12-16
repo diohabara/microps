@@ -24,11 +24,14 @@ struct ip_protocol {
     struct ip_protocol *next;
     char name[16];
     uint8_t type;
-    void (*handler)(struct ip_iface *iface, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst);
+    void (*handler)(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst);
 };
 
 const ip_addr_t IP_ADDR_ANY = 0x00000000;
 const ip_addr_t IP_ADDR_BROADCAST = 0xffffffff;
+
+static pthread_mutex_t m_ifaces = PTHREAD_MUTEX_INITIALIZER;
+static struct ip_iface *ifaces;
 
 static struct ip_route route_table[IP_ROUTE_TABLE_SIZE];
 static struct ip_protocol *protocols;
@@ -120,7 +123,8 @@ ip_route_add(ip_addr_t network, ip_addr_t netmask, ip_addr_t nexthop, struct ip_
 
 #if 0
 static int
-ip_route_del(struct ip_iface *iface) {
+ip_route_del(struct ip_iface *iface)
+{
     struct ip_route *route;
 
     for (route = route_table; route < array_tailof(route_table); route++) {
@@ -174,7 +178,8 @@ ip_iface_alloc(const char *unicast, const char *netmask)
     NET_IFACE(iface)->next = NULL;
     NET_IFACE(iface)->dev = NULL;
     NET_IFACE(iface)->family = NET_IFACE_FAMILY_IPV4;
-    NET_IFACE(iface)->alen = IP_ADDR_LEN; 
+    NET_IFACE(iface)->alen = IP_ADDR_LEN;
+    iface->next = NULL;
     if (ip_addr_pton(unicast, &iface->unicast) == -1) {
         errorf("ip_addr_pton() failure, unicast=%s", unicast);
         free(iface);
@@ -202,20 +207,27 @@ ip_iface_register(struct net_device *dev, struct ip_iface *iface)
         errorf("net_device_add_iface() failure");
         return -1;
     }
+    pthread_mutex_lock(&m_ifaces);
+    iface->next = ifaces;
+    ifaces = iface;
+    pthread_mutex_unlock(&m_ifaces);
     infof("registerd: %s %s", ip_addr_ntop(&iface->unicast, addr1, sizeof(addr1)), ip_addr_ntop(&iface->netmask, addr2, sizeof(addr2)));
     return 0;
-}
-
-static int
-ip_iface_select(struct net_iface *iface, void *addr)
-{
-    return ((struct ip_iface *)iface)->unicast == *(ip_addr_t *)addr ? 0 : -1;
 }
 
 struct ip_iface *
 ip_iface_by_addr(ip_addr_t addr)
 {
-    return (struct ip_iface *)net_device_select_iface(NET_IFACE_FAMILY_IPV4, ip_iface_select, &addr);
+    struct ip_iface *entry;
+
+    pthread_mutex_lock(&m_ifaces);
+    for (entry = ifaces; entry; entry = entry->next) {
+        if (entry->unicast == addr) {
+            break;
+        }
+    }
+    pthread_mutex_unlock(&m_ifaces);
+    return entry;
 }
 
 struct ip_iface *
@@ -291,7 +303,7 @@ ip_input(struct net_device *dev, const uint8_t *data, size_t len)
     ip_dump(data, len);
     for (proto = protocols; proto; proto = proto->next) {
         if (proto->type == hdr->protocol) {
-            proto->handler(iface, (uint8_t *)(hdr + 1), len - hlen, hdr->src, hdr->dst);
+            proto->handler((uint8_t *)(hdr + 1), len - hlen, hdr->src, hdr->dst);
             return;
         }
     }
@@ -362,28 +374,34 @@ ip_output_core(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, si
 }
 
 ssize_t
-ip_output(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t dst)
+ip_output(uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst)
 {
-    ip_addr_t src, nexthop;
+    struct ip_iface *iface;
+    ip_addr_t nexthop;
     struct ip_route *route;
     uint16_t id;
 
     if (dst == IP_ADDR_BROADCAST) {
-        if (!iface) {
-            errorf("need specify iface to send to broadcast address");
+        if (src == IP_ADDR_ANY) {
+            errorf("need specify source address to send to broadcast address");
             return -1;
         }
-        src = iface->unicast;
+        iface = ip_iface_by_addr(src);
+        if (!iface) {
+            errorf("iface not found");
+            return -1;
+        }
         nexthop = dst;
     } else {
-        route = ip_route_lookup(iface, dst);
+        route = ip_route_lookup(NULL, dst);
         if (!route) {
             errorf("ip no route to host");
             return -1;
         }
-        src = iface ? iface->unicast : route->iface->unicast;
+        if (src == IP_ADDR_ANY) {
+            src = route->iface->unicast;
+        }
         nexthop = (route->nexthop != IP_ADDR_ANY) ? route->nexthop : dst;
-        /* change iface to route->iface */
         iface = route->iface;
     }
     if (len > (size_t)(NET_IFACE(iface)->dev->mtu - IP_HDR_SIZE_MIN)) {
@@ -400,7 +418,7 @@ ip_output(struct ip_iface *iface, uint8_t protocol, const uint8_t *data, size_t 
 }
 
 int
-ip_protocol_register(const char *name, uint8_t type, void (*handler)(struct ip_iface *iface, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst))
+ip_protocol_register(const char *name, uint8_t type, void (*handler)(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst))
 {
     struct ip_protocol *entry;
 

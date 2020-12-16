@@ -60,7 +60,7 @@ main(void)
     }
     ip_addr_pton("127.0.0.1", &dst);
     while (!terminate) {
-        udp_output(iface, hton16(7), data, sizeof(data), dst, hton16(7));
+        udp_output(iface->unicast, hton16(7), data, sizeof(data), dst, hton16(7));
         sleep(1);
     }
     net_shutdown();

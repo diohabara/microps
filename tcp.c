@@ -196,7 +196,6 @@ tcp_output(struct tcp_pcb *pcb, uint32_t seq, uint32_t ack, uint8_t flg, uint8_t
     uint8_t buf[1500];
     struct tcp_hdr *hdr;
     uint32_t pseudo = 0;
-    struct ip_iface *iface;
 
     memset(&buf, 0, sizeof(buf));
     hdr = (struct tcp_hdr *)buf;
@@ -217,14 +216,9 @@ tcp_output(struct tcp_pcb *pcb, uint32_t seq, uint32_t ack, uint8_t flg, uint8_t
     pseudo += hton16((uint16_t)IP_PROTOCOL_TCP);
     pseudo += hton16(sizeof(struct tcp_hdr) + len);
     hdr->sum = cksum16((uint16_t *)hdr, sizeof(struct tcp_hdr) + len, pseudo);
-    iface = ip_iface_by_addr(pcb->self.addr);
-    if (!iface) {
-        errorf("iface not found");
-        return -1;
-    }
     debugf("output");
     tcp_dump((uint8_t *)hdr, sizeof(struct tcp_hdr) + len);
-    ip_output(iface, IP_PROTOCOL_TCP, (uint8_t *)hdr, sizeof(struct tcp_hdr) + len, pcb->peer.addr);
+    ip_output(IP_PROTOCOL_TCP, (uint8_t *)hdr, sizeof(struct tcp_hdr) + len, pcb->self.addr, pcb->peer.addr);
     if (len || TCP_FLG_ISSET(flg, TCP_FLG_SYN | TCP_FLG_FIN)) {
         tcp_txq_add(pcb, hdr, sizeof(struct tcp_hdr) + len);
     }
@@ -595,7 +589,7 @@ tcp_segment_arrives(struct tcp_hdr *hdr, size_t len, ip_addr_t src, ip_addr_t ds
 }
 
 static void
-tcp_input(struct ip_iface *iface, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst) {
+tcp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst) {
     struct tcp_hdr *hdr;
     uint32_t pseudo = 0;
 
@@ -904,7 +898,6 @@ tcp_timer(void)
     struct timeval timestamp, diff;
     struct tcp_pcb *pcb;
     struct tcp_txq_entry *entry;
-    struct ip_iface *iface;
 
     pthread_mutex_lock(&mutex);
     gettimeofday(&timestamp, NULL);
@@ -921,8 +914,7 @@ tcp_timer(void)
         for (entry = pcb->txq.head; entry; entry = entry->next) {
             timersub(&timestamp, &entry->timestamp, &diff);
             if (diff.tv_sec > 3) {
-                iface = ip_iface_by_addr(pcb->self.addr);
-                ip_output(iface, IP_PROTOCOL_TCP, (uint8_t *)entry->segment, entry->len, pcb->peer.addr);
+                ip_output(IP_PROTOCOL_TCP, (uint8_t *)entry->segment, entry->len, pcb->self.addr, pcb->peer.addr);
                 entry->timestamp = timestamp;
             }
         }

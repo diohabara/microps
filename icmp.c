@@ -82,7 +82,7 @@ icmp_dump(const uint8_t *data, size_t len)
 }
 
 static void
-icmp_input(struct ip_iface *iface, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst)
+icmp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst)
 {
     char addr1[IP_ADDR_STR_LEN], addr2[IP_ADDR_STR_LEN];
     struct icmp_hdr *hdr;
@@ -90,13 +90,13 @@ icmp_input(struct ip_iface *iface, const uint8_t *data, size_t len, ip_addr_t sr
     if (len < sizeof(struct icmp_hdr)) {
         return;
     }
-    debugf("<%s> %s => %s (%zu byte)",
-        NET_IFACE(iface)->dev->name, ip_addr_ntop(&src, addr1, sizeof(addr1)), ip_addr_ntop(&dst, addr2, sizeof(addr2)), len);
+    debugf("%s => %s (%zu byte)",
+        ip_addr_ntop(&src, addr1, sizeof(addr1)), ip_addr_ntop(&dst, addr2, sizeof(addr2)), len);
     icmp_dump(data, len);
     hdr = (struct icmp_hdr *)data;
     switch (hdr->type) {
     case ICMP_TYPE_ECHO:
-        icmp_output(iface, ICMP_TYPE_ECHOREPLY, hdr->code, hdr->values, (uint8_t *)(hdr + 1), len - sizeof(struct icmp_hdr), src);
+        icmp_output(ICMP_TYPE_ECHOREPLY, hdr->code, hdr->values, (uint8_t *)(hdr + 1), len - sizeof(struct icmp_hdr), dst, src);
         break;
     default:
         /* ignore */
@@ -105,7 +105,7 @@ icmp_input(struct ip_iface *iface, const uint8_t *data, size_t len, ip_addr_t sr
 }
 
 int
-icmp_output(struct ip_iface *iface, uint8_t type, uint8_t code, uint32_t values, uint8_t *data, size_t len, ip_addr_t dst)
+icmp_output(uint8_t type, uint8_t code, uint32_t values, uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst)
 {
     uint8_t buf[ICMP_BUFSIZ];
     struct icmp_hdr *hdr;
@@ -120,13 +120,10 @@ icmp_output(struct ip_iface *iface, uint8_t type, uint8_t code, uint32_t values,
     memcpy(hdr + 1, data, len);
     msg_len = sizeof(struct icmp_hdr) + len;
     hdr->sum = cksum16((uint16_t *)hdr, msg_len, 0);
-    debugf("<%s> %s => %s (%zu byte)",
-        iface ? NET_IFACE(iface)->dev->name : "---",
-        iface ? ip_addr_ntop(&iface->unicast, addr1, sizeof(addr1)) : "---",
-        ip_addr_ntop(&dst, addr2, sizeof(addr2)),
-        msg_len);
+    debugf("%s => %s (%zu byte)",
+        ip_addr_ntop(&src, addr1, sizeof(addr1)), ip_addr_ntop(&dst, addr2, sizeof(addr2)), msg_len);
     icmp_dump((uint8_t *)hdr, msg_len);
-    return ip_output(iface, IP_PROTOCOL_ICMP, (uint8_t *)hdr, msg_len, dst);
+    return ip_output(IP_PROTOCOL_ICMP, (uint8_t *)hdr, msg_len, src, dst);
 }
 
 int

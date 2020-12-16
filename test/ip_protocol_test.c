@@ -21,12 +21,12 @@ on_signal (int s)
 }
 
 static void
-dummy_func(struct ip_iface *iface, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst)
+dummy_func(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst)
 {
     char addr1[IP_ADDR_STR_LEN];
     char addr2[IP_ADDR_STR_LEN];
 
-    debugf("<%s> %s => %s (%zd bytes data)", NET_IFACE(iface)->dev->name, ip_addr_ntop(&src, addr1, sizeof(addr1)), ip_addr_ntop(&src, addr2, sizeof(addr2)), len);
+    debugf("%s => %s (%zd bytes data)", ip_addr_ntop(&src, addr1, sizeof(addr1)), ip_addr_ntop(&src, addr2, sizeof(addr2)), len);
     debugdump(data, len);
 }
 
@@ -61,7 +61,7 @@ main(void)
     ip_iface_register(dev, iface);
     ip_addr_pton("127.0.0.1", &dst);
     while (!terminate) {
-        ip_output(iface, ip_test.type, ip_test.data, ip_test.len, dst);
+        ip_output(ip_test.type, ip_test.data, ip_test.len, iface->unicast, dst);
         sleep(1);
     }
     net_shutdown();

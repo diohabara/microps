@@ -45,7 +45,7 @@ struct udp_queue_entry {
 
 struct udp_pcb {
     int used;
-    struct net_iface *iface;
+    ip_addr_t addr;
     uint16_t port;
     struct queue_head queue; /* receive queue */
     pthread_cond_t cond;
@@ -70,12 +70,12 @@ udp_dump(const uint8_t *data, size_t len)
 }
 
 static struct udp_pcb *
-udp_pcb_select(struct net_iface *iface, uint16_t port)
+udp_pcb_select(ip_addr_t addr, uint16_t port)
 {
     struct udp_pcb *pcb;
 
     for (pcb = pcb_table; pcb < array_tailof(pcb_table); pcb++) {
-        if (pcb->used && (!pcb->iface || pcb->iface == iface) && pcb->port == port) {
+        if (pcb->used && (pcb->addr == IP_ADDR_ANY || pcb->addr == addr) && pcb->port == port) {
             return pcb;
         }
     }
@@ -83,7 +83,7 @@ udp_pcb_select(struct net_iface *iface, uint16_t port)
 }
 
 static void
-udp_input(struct ip_iface *iface, const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst) {
+udp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst) {
     struct pseudo_hdr pseudo;
     uint16_t psum = 0;
     struct udp_hdr *hdr;
@@ -106,14 +106,11 @@ udp_input(struct ip_iface *iface, const uint8_t *data, size_t len, ip_addr_t src
         errorf("udp checksum error");
         return;
     }
-    debugf("receive: <%s> %s => %s (%zu byte)",
-        NET_IFACE(iface)->dev->name,
-        ip_addr_ntop(&src, addr1, sizeof(addr1)),
-        ip_addr_ntop(&dst, addr2, sizeof(addr2)),
-        len);
+    debugf("receive: %s => %s (%zu byte)",
+        ip_addr_ntop(&src, addr1, sizeof(addr1)), ip_addr_ntop(&dst, addr2, sizeof(addr2)), len);
     udp_dump(data, len);
     pthread_mutex_lock(&mutex);
-    pcb = udp_pcb_select(NET_IFACE(iface), hdr->dport);
+    pcb = udp_pcb_select(dst, hdr->dport);
     if (!pcb) {
         pthread_mutex_unlock(&mutex);
         /* TODO: ICMP Destination Unreachable (Port Unreachable) */
@@ -135,33 +132,30 @@ udp_input(struct ip_iface *iface, const uint8_t *data, size_t len, ip_addr_t src
 }
 
 ssize_t
-udp_output(struct ip_iface *iface, uint16_t sport, uint8_t *data, size_t len, ip_addr_t peer, uint16_t port) {
+udp_output(ip_addr_t src, uint16_t sport, uint8_t *data, size_t len, ip_addr_t dst, uint16_t dport) {
     struct pseudo_hdr pseudo;
     uint16_t psum = 0;
     uint8_t buf[65536];
     char addr1[IP_ADDR_STR_LEN], addr2[IP_ADDR_STR_LEN];
     struct udp_hdr *hdr;
 
-    pseudo.src = iface->unicast;
-    pseudo.dst = peer;
+    pseudo.src = src;
+    pseudo.dst = dst;
     pseudo.zero = 0;
     pseudo.protocol = IP_PROTOCOL_UDP;
     pseudo.len = hton16(sizeof(struct udp_hdr) + len);
     psum = ~cksum16((uint16_t *)&pseudo, sizeof(pseudo), 0);
     hdr = (struct udp_hdr *)buf;
     hdr->sport = sport;
-    hdr->dport = port;
+    hdr->dport = dport;
     hdr->len = hton16(sizeof(struct udp_hdr) + len);
     hdr->sum = 0;
     memcpy(hdr + 1, data, len);
     hdr->sum = cksum16((uint16_t *)hdr, sizeof(struct udp_hdr) + len, psum);
-    debugf("transmit: <%s> %s => %s (%zu byte)",
-        NET_IFACE(iface)->dev->name,
-        ip_addr_ntop(&iface->unicast, addr1, sizeof(addr1)),
-        ip_addr_ntop(&peer, addr2, sizeof(addr2)),
-        sizeof(struct udp_hdr) + len);
+    debugf("transmit: %s => %s (%zu byte)",
+        ip_addr_ntop(&src, addr1, sizeof(addr1)), ip_addr_ntop(&dst, addr2, sizeof(addr2)), sizeof(struct udp_hdr) + len);
     udp_dump((uint8_t *)hdr, sizeof(struct udp_hdr) + len);
-    return ip_output(iface, IP_PROTOCOL_UDP, (uint8_t *)hdr, sizeof(struct udp_hdr) + len, peer);
+    return ip_output(IP_PROTOCOL_UDP, (uint8_t *)hdr, sizeof(struct udp_hdr) + len, src, dst);
 }
 
 int
@@ -197,7 +191,7 @@ udp_close(int soc)
         return -1;
     }
     pcb->used = 0;
-    pcb->iface = NULL;
+    pcb->addr = IP_ADDR_ANY;
     pcb->port = 0;
     while ((entry = queue_pop(&pcb->queue)) != NULL) {
         free(entry);
@@ -211,7 +205,6 @@ int
 udp_bind(int soc, ip_addr_t addr, uint16_t port)
 {
     struct udp_pcb *pcb;
-    struct net_iface *iface = NULL;
 
     if (soc < 0 || soc >= UDP_CB_TABLE_SIZE) {
         return -1;
@@ -223,17 +216,17 @@ udp_bind(int soc, ip_addr_t addr, uint16_t port)
         return -1;
     }
     if (addr) {
-        iface = (struct net_iface *)ip_iface_by_addr(addr);
-        if (!iface) {
+        // FIXME: check interface addr
+        if (!ip_iface_by_addr(addr)) {
             pthread_mutex_unlock(&mutex);
             return -1;
         }
     }
-    if (udp_pcb_select(iface, port) != NULL) {
+    if (udp_pcb_select(addr, port) != NULL) {
         pthread_mutex_unlock(&mutex);
         return -1;
     }
-    pcb->iface = iface;
+    pcb->addr = addr;
     pcb->port = port;
     pthread_mutex_unlock(&mutex);
     return 0;
@@ -243,7 +236,8 @@ ssize_t
 udp_sendto(int soc, uint8_t *data, size_t len, ip_addr_t peer, uint16_t port)
 {
     struct udp_pcb *pcb;
-    struct net_iface *iface;
+    ip_addr_t src;
+    struct ip_iface *iface;
     uint32_t p;
     uint16_t sport;
 
@@ -256,17 +250,18 @@ udp_sendto(int soc, uint8_t *data, size_t len, ip_addr_t peer, uint16_t port)
         pthread_mutex_unlock(&mutex);
         return -1;
     }
-    iface = pcb->iface;
-    if (!iface) {
-        iface = (struct net_iface *)ip_iface_by_peer(peer);
+    src = pcb->addr;
+    if (src == IP_ADDR_ANY) {
+        iface = ip_iface_by_peer(peer);
         if (!iface) {
             pthread_mutex_unlock(&mutex);
             return -1;
         }
+        src = iface->unicast;
     }
     if (!pcb->port) {
         for (p = UDP_SOURCE_PORT_MIN; p <= UDP_SOURCE_PORT_MAX; p++) {
-            if (!udp_pcb_select(iface, hton16(p))) {
+            if (!udp_pcb_select(src, hton16(p))) {
                 pcb->port = hton16(p);
                 break;
             }
@@ -278,7 +273,7 @@ udp_sendto(int soc, uint8_t *data, size_t len, ip_addr_t peer, uint16_t port)
     }
     sport = pcb->port;
     pthread_mutex_unlock(&mutex);
-    return udp_output((struct ip_iface *)iface, sport, data, len, peer, port);
+    return udp_output(src, sport, data, len, peer, port);
 }
 
 ssize_t

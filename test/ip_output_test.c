@@ -50,7 +50,7 @@ main(void)
     ip_iface_register(dev, iface);
     ip_addr_pton("127.0.0.1", &dst);
     while (!terminate) {
-        ip_output(iface, ip_test.type, ip_test.data, ip_test.len, dst);
+        ip_output(ip_test.type, ip_test.data, ip_test.len, iface->unicast, dst);
         sleep(1);
     }
     net_shutdown();

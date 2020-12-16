@@ -34,7 +34,8 @@ static struct ip_route route_table[IP_ROUTE_TABLE_SIZE];
 static struct ip_protocol *protocols;
 
 int
-ip_addr_pton(const char *p, ip_addr_t *n) {
+ip_addr_pton(const char *p, ip_addr_t *n)
+{
     char *sp, *ep;
     int idx;
     long ret;
@@ -58,7 +59,8 @@ ip_addr_pton(const char *p, ip_addr_t *n) {
 }
 
 char *
-ip_addr_ntop(const ip_addr_t *n, char *p, size_t size) {
+ip_addr_ntop(const ip_addr_t *n, char *p, size_t size)
+{
     uint8_t *u8;
 
     u8 = (uint8_t *)n;
@@ -67,7 +69,8 @@ ip_addr_ntop(const ip_addr_t *n, char *p, size_t size) {
 }
 
 void
-ip_dump(const uint8_t *packet, size_t plen) {
+ip_dump(const uint8_t *packet, size_t plen)
+{
     struct ip_hdr *hdr;
     uint8_t hl;
     uint16_t offset;
@@ -97,7 +100,8 @@ ip_dump(const uint8_t *packet, size_t plen) {
  */
 
 static int
-ip_route_add(ip_addr_t network, ip_addr_t netmask, ip_addr_t nexthop, struct ip_iface *iface) {
+ip_route_add(ip_addr_t network, ip_addr_t netmask, ip_addr_t nexthop, struct ip_iface *iface)
+{
     struct ip_route *route;
 
     for (route = route_table; route < array_tailof(route_table); route++) {
@@ -135,7 +139,8 @@ ip_route_del(struct ip_iface *iface) {
 #endif
 
 static struct ip_route *
-ip_route_lookup(struct ip_iface *iface, ip_addr_t dst) {
+ip_route_lookup(struct ip_iface *iface, ip_addr_t dst)
+{
     struct ip_route *route, *candidate = NULL;
 
     for (route = route_table; route < array_tailof(route_table); route++) {
@@ -202,17 +207,20 @@ ip_iface_register(struct net_device *dev, struct ip_iface *iface)
 }
 
 static int
-ip_iface_select(struct net_iface *iface, void *addr) {
+ip_iface_select(struct net_iface *iface, void *addr)
+{
     return ((struct ip_iface *)iface)->unicast == *(ip_addr_t *)addr ? 0 : -1;
 }
 
 struct ip_iface *
-ip_iface_by_addr(ip_addr_t addr) {
+ip_iface_by_addr(ip_addr_t addr)
+{
     return (struct ip_iface *)net_device_select_iface(NET_IFACE_FAMILY_IPV4, ip_iface_select, &addr);
 }
 
 struct ip_iface *
-ip_iface_by_peer(ip_addr_t peer) {
+ip_iface_by_peer(ip_addr_t peer)
+{
     struct ip_route *route;
 
     route = ip_route_lookup(NULL, peer);
@@ -223,7 +231,8 @@ ip_iface_by_peer(ip_addr_t peer) {
 }
 
 int
-ip_set_default_gateway (struct ip_iface *iface, const char *gateway) {
+ip_set_default_gateway(struct ip_iface *iface, const char *gateway)
+{
     ip_addr_t gw;
 
     if (ip_addr_pton(gateway, &gw) == -1) {

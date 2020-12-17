@@ -40,6 +40,8 @@
 #define TCP_SOURCE_PORT_MIN 49152
 #define TCP_SOURCE_PORT_MAX 65535
 
+#define TCP_DEFAULT_MSS 536 /* rfc879 */
+
 struct tcp_hdr {
     uint16_t src;
     uint16_t dst;
@@ -52,16 +54,11 @@ struct tcp_hdr {
     uint16_t urg;
 };
 
-struct tcp_txq_entry {
+struct tcp_queue_entry {
+    struct queue_entry *next;
     struct tcp_hdr *segment;
     uint16_t len;
     struct timeval timestamp;
-    struct tcp_txq_entry *next;
-};
-
-struct tcp_txq_head {
-    struct tcp_txq_entry *head;
-    struct tcp_txq_entry *tail;
 };
 
 struct tcp_pcb {
@@ -71,20 +68,22 @@ struct tcp_pcb {
     struct {
         uint32_t nxt;
         uint32_t una;
+        uint16_t wnd;
         uint16_t up;
         uint32_t wl1;
         uint32_t wl2;
-        uint16_t wnd;
     } snd;
     uint32_t iss;
     struct {
         uint32_t nxt;
-        uint16_t up;
         uint16_t wnd;
+        uint16_t up;
     } rcv;
     uint32_t irs;
-    struct tcp_txq_head txq;
-    uint8_t window[65535];
+    uint16_t mtu;
+    uint16_t mss;
+    struct queue_head snd_queue;
+    uint8_t rcv_buf[65535];
     struct tcp_pcb *parent;
     struct queue_head backlog;
     pthread_cond_t cond;
@@ -161,32 +160,27 @@ delete_pcb(struct tcp_pcb *pcb)
 }
 
 static int
-tcp_txq_add(struct tcp_pcb *pcb, struct tcp_hdr *hdr, size_t len)
+tcp_queue_add(struct tcp_pcb *pcb, struct tcp_hdr *hdr, size_t len)
 {
-    struct tcp_txq_entry *txq;
+    struct tcp_queue_entry *entry;
 
-    txq = malloc(sizeof(struct tcp_txq_entry));
-    if (!txq) {
+    entry = malloc(sizeof(struct tcp_queue_entry));
+    if (!entry) {
         return -1;
     }
-    txq->segment = malloc(len);
-    if (!txq->segment) {
-        free(txq);
+    entry->segment = malloc(len);
+    if (!entry->segment) {
+        free(entry);
         return -1;
     }
-    memcpy(txq->segment, hdr, len);
-    txq->len = len;
-    gettimeofday(&txq->timestamp, NULL);
-    txq->next = NULL;
-
-    // set txq to next of tail entry
-    if (pcb->txq.head == NULL) {
-        pcb->txq.head = txq;
-    } else {
-        pcb->txq.tail->next = txq;
+    memcpy(entry->segment, hdr, len);
+    entry->len = len;
+    gettimeofday(&entry->timestamp, NULL);
+    if (!queue_push(&pcb->snd_queue, (struct queue_entry *)entry)) {
+        free(entry->segment);
+        free(entry);
+        return -1;
     }
-    // update tail entry
-    pcb->txq.tail = txq;
     return 0;
 }
 
@@ -220,7 +214,7 @@ tcp_output(struct tcp_pcb *pcb, uint32_t seq, uint32_t ack, uint8_t flg, uint8_t
     tcp_dump((uint8_t *)hdr, sizeof(struct tcp_hdr) + len);
     ip_output(IP_PROTOCOL_TCP, (uint8_t *)hdr, sizeof(struct tcp_hdr) + len, pcb->self.addr, pcb->peer.addr);
     if (len || TCP_FLG_ISSET(flg, TCP_FLG_SYN | TCP_FLG_FIN)) {
-        tcp_txq_add(pcb, hdr, sizeof(struct tcp_hdr) + len);
+        tcp_queue_add(pcb, hdr, sizeof(struct tcp_hdr) + len);
     }
     return len;
 }
@@ -274,7 +268,7 @@ tcp_segment_arrives(struct tcp_hdr *hdr, size_t len, ip_addr_t src, ip_addr_t ds
             new_pcb->self.port = hdr->dst;
             new_pcb->peer.addr = src;
             new_pcb->peer.port = hdr->src;
-            new_pcb->rcv.wnd = sizeof(new_pcb->window);
+            new_pcb->rcv.wnd = sizeof(new_pcb->rcv_buf);
             new_pcb->parent = pcb;
             new_pcb->next = pcbs;
             pcbs = new_pcb;
@@ -526,7 +520,7 @@ tcp_segment_arrives(struct tcp_hdr *hdr, size_t len, ip_addr_t src, ip_addr_t ds
     case TCP_STATE_ESTABLISHED:
     case TCP_STATE_FIN_WAIT1:
     case TCP_STATE_FIN_WAIT2:
-        memcpy(pcb->window + (sizeof(pcb->window) - pcb->rcv.wnd), (uint8_t *)hdr + hlen, slen);
+        memcpy(pcb->rcv_buf + (sizeof(pcb->rcv_buf) - pcb->rcv.wnd), (uint8_t *)hdr + hlen, slen);
         pcb->rcv.nxt = ntoh32(hdr->seq) + slen;
         pcb->rcv.wnd -= slen;
         tcp_output(pcb, pcb->snd.nxt, pcb->rcv.nxt, TCP_FLG_ACK, NULL, 0);
@@ -641,7 +635,7 @@ tcp_open(struct socket *local, struct socket *foreign, int active)
         pcb->self.port = local->port;
         pcb->peer.addr = foreign->addr;
         pcb->peer.port = foreign->port;
-        pcb->rcv.wnd = sizeof(pcb->window);
+        pcb->rcv.wnd = sizeof(pcb->rcv_buf);
         pcb->iss = random();
         tcp_output(pcb, pcb->iss, 0, TCP_FLG_SYN, NULL, 0);
         pcb->snd.una = pcb->iss;
@@ -759,7 +753,7 @@ RETRY:
     case TCP_STATE_ESTABLISHED:
     case TCP_STATE_FIN_WAIT1:
     case TCP_STATE_FIN_WAIT2:
-        remain = sizeof(pcb->window) - pcb->rcv.wnd;
+        remain = sizeof(pcb->rcv_buf) - pcb->rcv.wnd;
         if (!remain) {
             pthread_cond_wait(&pcb->cond, &mutex);
             if (net_interrupt) {
@@ -770,7 +764,7 @@ RETRY:
         }
         break;
     case TCP_STATE_CLOSE_WAIT:
-        remain = sizeof(pcb->window) - pcb->rcv.wnd;
+        remain = sizeof(pcb->rcv_buf) - pcb->rcv.wnd;
         if (remain) {
             break;
         }
@@ -785,8 +779,8 @@ RETRY:
         return -1;
     }
     len = MIN(size, remain);
-    memcpy(buf, pcb->window, len);
-    memmove(pcb->window, pcb->window + len, remain - len);
+    memcpy(buf, pcb->rcv_buf, len);
+    memmove(pcb->rcv_buf, pcb->rcv_buf + len, remain - len);
     pcb->rcv.wnd += len;
     return len;
 }
@@ -895,23 +889,23 @@ tcp_cmd_close(struct tcp_pcb *pcb)
 static void
 tcp_timer(void)
 {
-    struct timeval timestamp, diff;
     struct tcp_pcb *pcb;
-    struct tcp_txq_entry *entry;
+    struct tcp_queue_entry *entry;
+    struct timeval timestamp, diff;
 
     pthread_mutex_lock(&mutex);
     gettimeofday(&timestamp, NULL);
     for (pcb = pcbs; pcb; pcb = pcb->next) {
-        while (pcb->txq.head) {
-            entry = pcb->txq.head;
+        while (pcb->snd_queue.next) {
+            entry = (struct tcp_queue_entry *)pcb->snd_queue.next;
             if (ntoh32(entry->segment->seq) >= pcb->snd.una) {
                 break;
             }
-            pcb->txq.head = entry->next;
+            entry = (struct tcp_queue_entry *)queue_pop(&pcb->snd_queue);
             free(entry->segment);
             free(entry);
         }
-        for (entry = pcb->txq.head; entry; entry = entry->next) {
+        for (entry = (struct tcp_queue_entry *)pcb->snd_queue.next; entry; entry = (struct tcp_queue_entry *)entry->next) {
             timersub(&timestamp, &entry->timestamp, &diff);
             if (diff.tv_sec > 3) {
                 ip_output(IP_PROTOCOL_TCP, (uint8_t *)entry->segment, entry->len, pcb->self.addr, pcb->peer.addr);

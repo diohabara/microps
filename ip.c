@@ -8,6 +8,8 @@
 #include "arp.h"
 #include "ip.h"
 
+#include "icmp.h"
+
 #define NET_PROTOCOL_TYPE_IP 0x0800
 
 #define IP_ROUTE_TABLE_SIZE 8
@@ -33,7 +35,10 @@ const ip_addr_t IP_ADDR_BROADCAST = 0xffffffff;
 static pthread_mutex_t m_ifaces = PTHREAD_MUTEX_INITIALIZER;
 static struct ip_iface *ifaces;
 
-static struct ip_route route_table[IP_ROUTE_TABLE_SIZE];
+static pthread_mutex_t m_routes = PTHREAD_MUTEX_INITIALIZER;
+static struct ip_route routes[IP_ROUTE_TABLE_SIZE];
+
+static pthread_mutex_t m_protocols = PTHREAD_MUTEX_INITIALIZER;
 static struct ip_protocol *protocols;
 
 int
@@ -107,16 +112,19 @@ ip_route_add(ip_addr_t network, ip_addr_t netmask, ip_addr_t nexthop, struct ip_
 {
     struct ip_route *route;
 
-    for (route = route_table; route < array_tailof(route_table); route++) {
+    pthread_mutex_lock(&m_routes);
+    for (route = routes; route < array_tailof(routes); route++) {
         if (!route->used) {
             route->used = 1;
             route->network = network;
             route->netmask = netmask;
             route->nexthop = nexthop;
             route->iface = iface;
+            pthread_mutex_unlock(&m_routes);
             return 0;
         }
     }
+    pthread_mutex_unlock(&m_routes);
     errorf("no free space");
     return -1;
 }
@@ -143,17 +151,19 @@ ip_route_del(struct ip_iface *iface)
 #endif
 
 static struct ip_route *
-ip_route_lookup(struct ip_iface *iface, ip_addr_t dst)
+ip_route_lookup(ip_addr_t dst)
 {
     struct ip_route *route, *candidate = NULL;
 
-    for (route = route_table; route < array_tailof(route_table); route++) {
-        if (route->used && (dst & route->netmask) == route->network && (!iface || route->iface == iface)) {
+    pthread_mutex_lock(&m_routes);
+    for (route = routes; route < array_tailof(routes); route++) {
+        if (route->used && (dst & route->netmask) == route->network) {
             if (!candidate || ntoh32(candidate->netmask) < ntoh32(route->netmask)) {
                 candidate = route;
             }
         }
     }
+    pthread_mutex_unlock(&m_routes);
     return candidate;
 }
 
@@ -235,7 +245,7 @@ ip_iface_by_peer(ip_addr_t peer)
 {
     struct ip_route *route;
 
-    route = ip_route_lookup(NULL, peer);
+    route = ip_route_lookup(peer);
     if (!route) {
         return NULL;
     }
@@ -301,11 +311,17 @@ ip_input(struct net_device *dev, const uint8_t *data, size_t len)
     }
     debugf("<%s> arrived %zd bytes data", dev->name, len);
     ip_dump(data, len);
+    pthread_mutex_lock(&m_protocols);
     for (proto = protocols; proto; proto = proto->next) {
         if (proto->type == hdr->protocol) {
-            proto->handler((uint8_t *)(hdr + 1), len - hlen, hdr->src, hdr->dst);
-            return;
+            proto->handler((uint8_t *)hdr + hlen, len - hlen, hdr->src, hdr->dst);
+            break;
         }
+    }
+    pthread_mutex_unlock(&m_protocols);
+    if (!proto) {
+        /* unsupported protocol */
+        return;
     }
 }
 
@@ -393,7 +409,7 @@ ip_output(uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t src, ip_a
         }
         nexthop = dst;
     } else {
-        route = ip_route_lookup(NULL, dst);
+        route = ip_route_lookup(dst);
         if (!route) {
             errorf("ip no route to host");
             return -1;
@@ -422,15 +438,18 @@ ip_protocol_register(const char *name, uint8_t type, void (*handler)(const uint8
 {
     struct ip_protocol *entry;
 
+    pthread_mutex_lock(&m_protocols);
     for (entry = protocols; entry; entry = entry->next) {
         if (entry->type == type) {
             errorf("already registered: %s (0x%02x)", entry->name, entry->type);
+            pthread_mutex_unlock(&m_protocols);
             return -1;
         }
     }
     entry = malloc(sizeof(struct ip_protocol));
     if (!entry) {
         errorf("malloc() failure");
+        pthread_mutex_unlock(&m_protocols);
         return -1;
     }
     entry->next = protocols;
@@ -438,6 +457,7 @@ ip_protocol_register(const char *name, uint8_t type, void (*handler)(const uint8
     entry->type = type;
     entry->handler = handler;
     protocols = entry;
+    pthread_mutex_unlock(&m_protocols);
     infof("registerd: %s (0x%02x)", name, type);
     return 0;
 }

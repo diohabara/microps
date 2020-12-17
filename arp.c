@@ -267,6 +267,7 @@ int
 arp_resolve(struct net_iface *iface, ip_addr_t pa, uint8_t *ha)
 {
     struct arp_entry *entry;
+    char addr1[IP_ADDR_STR_LEN], addr2[ETHER_ADDR_STR_LEN];
 
     if (iface->family != NET_IFACE_FAMILY_IPV4 || iface->dev->type != NET_DEVICE_TYPE_ETHER) {
         debugf("unsupported address type");
@@ -282,7 +283,7 @@ arp_resolve(struct net_iface *iface, ip_addr_t pa, uint8_t *ha)
         }
         memcpy(ha, entry->ha, ETHER_ADDR_LEN);
         pthread_mutex_unlock(&mutex);
-        debugf("found arp entry");
+        debugf("%s is at %s", ip_addr_ntop(&pa, addr1, sizeof(addr1)), ether_addr_ntop(ha, addr2, sizeof(addr2)));
         return ARP_RESOLVE_FOUND;
     }
     entry = arp_table_freespace();

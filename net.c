@@ -278,7 +278,6 @@ net_background_thread(void *arg)
                 out = (struct net_device_queue_entry *)queue_pop(&dev->queue);
                 pthread_mutex_unlock(&dev->mutex);
                 if (out) {
-debugf("trasnmit");
                     dev->ops->transmit(dev, out->type, out->data, out->len, out->dst);
                     free(out);
                     count++;

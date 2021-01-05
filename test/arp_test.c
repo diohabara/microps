@@ -23,57 +23,54 @@ on_signal (int s)
     terminate = 1;
 }
 
-static void
+static int
 setup(void)
 {
-    signal(SIGINT, on_signal);
-    net_init();
-    arp_init();
-    ip_init();
-    icmp_init();
-}
-
-static int
-setup_loopback(void) {
     struct net_device *dev;
     struct ip_iface *iface;
 
-    dev = loopback_init();
+    signal(SIGINT, on_signal);
+    if (net_init() == -1) {
+        return -1;
+    }
+    if (arp_init() == -1) {
+        return -1;
+    }
+    if (ip_init() == -1) {
+        return -1;
+    }
+    if (icmp_init() == -1) {
+        return -1;
+    }
+    dev = ether_tap_init("tap0");
     if (!dev) {
+        return -1;
+    }
+    iface = ip_iface_alloc("172.16.10.2", "255.255.255.0");
+    if (!iface) {
+        return -1;
+    }
+    if (ip_iface_register(dev, iface) == -1) {
         return -1;
     }
     if (dev->ops->open(dev) == -1) {
         return -1;
     }
-    iface = ip_iface_alloc("127.0.0.1", "255.0.0.0");
-    if (!iface) {
-        return -1;
-    }
-    return ip_iface_register(dev, iface);
+    net_run();
+    return 0;
 }
 
 int
 main(void)
 {
-    struct net_device *dev;
-    struct ip_iface *iface;
     ip_addr_t dst;
 
-    setup();
-    setup_loopback();
-
-    dev = ether_tap_init("tap0");
-    if (!dev) {
+    if (setup() == -1) {
         return -1;
     }
-    if (dev->ops->open(dev) == -1) {
-        return -1;
-    }
-    iface = ip_iface_alloc("172.16.10.2", "255.255.255.0");
-    ip_iface_register(dev, iface);
     ip_addr_pton("172.16.10.1", &dst);
     while (!terminate) {
-        icmp_output(ICMP_TYPE_ECHO, 0, 0, data, sizeof(data), iface->unicast, dst);
+        icmp_output(ICMP_TYPE_ECHO, 0, 0, data, sizeof(data), IP_ADDR_ANY, dst);
         sleep(1);
     }
     net_shutdown();

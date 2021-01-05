@@ -13,9 +13,20 @@
 #define MIN(x, y) ((x) < (y) ? (x) : (y))
 #endif
 
+#define timespec_add_nsec(x, y)          \
+    do {                                 \
+        (x)->tv_nsec += y;               \
+        if ((x)->tv_nsec > 1000000000) { \
+            (x)->tv_sec += 1;            \
+            (x)->tv_nsec -= 1000000000;  \
+        }                                \
+    } while(0);
+
 #define sizeof_member(s, m) sizeof(((s *)NULL)->m)
-#define array_tailof(x) (x + (sizeof(x) / sizeof(*x)))
+#define array_size(x) ((sizeof(x) / sizeof(*x)))
+#define array_tailof(x) (x + array_size(x))
 #define array_offset(x, y) (((uintptr_t)y - (uintptr_t)x) / sizeof(*y))
+#define array_index_isvalid(x, y) ((y) >=0 && (unsigned int)(y) < array_size(x))
 
 #define errorf(...) lprintf('E', __FILE__, __LINE__, __func__, __VA_ARGS__)
 #define warnf(...) lprintf('W', __FILE__, __LINE__, __func__, __VA_ARGS__)
@@ -40,6 +51,7 @@ ntoh32(uint32_t n);
 
 struct queue_entry {
     struct queue_entry *next;
+    /* specific data  */
 };
 
 struct queue_head {

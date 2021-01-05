@@ -8,42 +8,40 @@
 #include "ip.h"
 #include "icmp.h"
 #include "tcp.h"
+
 #include "ether_tap.h"
 
 #include "test.h"
-
-volatile sig_atomic_t terminate;
 
 static void
 on_signal (int s)
 {
     (void)s;
-    terminate = 1;
+    net_interrupt = 1;
 }
 
-static void
+static int
 setup(void)
-{
-    signal(SIGINT, on_signal);
-    net_init();
-    arp_init();
-    ip_init();
-    icmp_init();
-    tcp_init();
-}
-
-int
-main(void)
 {
     struct net_device *dev;
     struct ip_iface *iface;
-    struct socket self, peer;
-    struct tcp_pcb *tcb;
-    uint8_t buf[4096];
-    ssize_t n;
 
-    setup();
-
+    signal(SIGINT, on_signal);
+    if (net_init() == -1) {
+        return -1;
+    }
+    if (arp_init() == -1) {
+        return -1;
+    }
+    if (ip_init() == -1) {
+        return -1;
+    }
+    if (icmp_init() == -1) {
+        return -1;
+    }
+    if (tcp_init() == -1) {
+        return -1;
+    }
     dev = ether_tap_init("tap0");
     if (!dev) {
         return -1;
@@ -58,25 +56,39 @@ main(void)
     if (dev->ops->open(dev) == -1) {
         return -1;
     }
-    ip_addr_pton("172.16.10.2", &self.addr);
-    self.port = hton16(7);
-    ip_addr_pton("172.16.10.1", &peer.addr);
-    peer.port = hton16(7);
-    tcb = tcp_cmd_open(&self, &peer, 1);
-    if (!tcb) {
+    net_run();
+    return 0;
+}
+
+int
+main(void)
+{
+    struct socket peer;
+    int con;
+    uint8_t buf[4096];
+    ssize_t n;
+
+    if (setup() == -1) {
         return -1;
     }
+    ip_addr_pton("172.16.10.1", &peer.addr);
+    peer.port = hton16(7);
+    con = tcp_open();
+    if (con == -1) {
+        return -1;
+    }
+    tcp_connect(con, &peer);
     debugf("connection established");
-    while (!terminate) {
-        n = tcp_cmd_receive(tcb, buf, sizeof(buf));
+    while (1) {
+        n = tcp_receive(con, buf, sizeof(buf));
         if (n <= 0) {
             break;
         }
         debugf("redeive %u bytes data", n);
         debugdump(buf, n);
-        tcp_cmd_send(tcb, buf, n);
+        tcp_send(con, buf, n);
     }
-    tcp_cmd_close(tcb);
+    tcp_close(con);
     net_shutdown();
     return 0;
 }

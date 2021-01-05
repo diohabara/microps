@@ -8,14 +8,10 @@
 #include "arp.h"
 #include "ip.h"
 
-#include "icmp.h"
-
 #define NET_PROTOCOL_TYPE_IP 0x0800
 
-#define IP_ROUTE_TABLE_SIZE 8
-
 struct ip_route {
-    int used;
+    struct ip_route *next;
     ip_addr_t network;
     ip_addr_t netmask;
     ip_addr_t nexthop;
@@ -29,17 +25,17 @@ struct ip_protocol {
     void (*handler)(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst);
 };
 
-const ip_addr_t IP_ADDR_ANY = 0x00000000;
-const ip_addr_t IP_ADDR_BROADCAST = 0xffffffff;
+const ip_addr_t IP_ADDR_ANY = 0x00000000; /* 0.0.0.0 */
+const ip_addr_t IP_ADDR_BROADCAST = 0xffffffff; /* 255.255.255.255 */
 
-static pthread_mutex_t m_ifaces = PTHREAD_MUTEX_INITIALIZER;
+/* NOTE: If you want to delete the entries, you need to protect these lists with a mutex. */
 static struct ip_iface *ifaces;
-
-static pthread_mutex_t m_routes = PTHREAD_MUTEX_INITIALIZER;
-static struct ip_route routes[IP_ROUTE_TABLE_SIZE];
-
-static pthread_mutex_t m_protocols = PTHREAD_MUTEX_INITIALIZER;
+static struct ip_route *routes;
 static struct ip_protocol *protocols;
+
+/*
+ * IP ADDRESS
+ */
 
 int
 ip_addr_pton(const char *p, ip_addr_t *n)
@@ -76,7 +72,7 @@ ip_addr_ntop(const ip_addr_t *n, char *p, size_t size)
     return p;
 }
 
-void
+static void
 ip_dump(const uint8_t *packet, size_t plen)
 {
     struct ip_hdr *hdr;
@@ -88,18 +84,20 @@ ip_dump(const uint8_t *packet, size_t plen)
     hdr = (struct ip_hdr *)packet;
     hl = hdr->vhl & 0x0f;
     flockfile(stderr);
-    fprintf(stderr, "     vhl: 0x%02x [v: %u, hl: %u (%u)]\n", hdr->vhl, (hdr->vhl & 0xf0) >> 4, hl, hl << 2);
-    fprintf(stderr, "     tos: 0x%02x\n", hdr->tos);
-    fprintf(stderr, "     len: %u\n", ntoh16(hdr->len));
-    fprintf(stderr, "      id: %u\n", ntoh16(hdr->id));
+    fprintf(stderr, "       vhl: 0x%02x [v: %u, hl: %u (%u)]\n", hdr->vhl, (hdr->vhl & 0xf0) >> 4, hl, hl << 2);
+    fprintf(stderr, "       tos: 0x%02x\n", hdr->tos);
+    fprintf(stderr, "       len: %u\n", ntoh16(hdr->len));
+    fprintf(stderr, "        id: %u\n", ntoh16(hdr->id));
     offset = ntoh16(hdr->offset);
-    fprintf(stderr, "  offset: 0x%04x [flags=%x, offset=%u]\n", offset, (offset & 0xe000) >> 13, offset & 0x1fff);
-    fprintf(stderr, "     ttl: %u\n", hdr->ttl);
-    fprintf(stderr, "protocol: %u\n", hdr->protocol);
-    fprintf(stderr, "     sum: 0x%04x\n", ntoh16(hdr->sum));
-    fprintf(stderr, "     src: %s\n", ip_addr_ntop(&hdr->src, addr, sizeof(addr)));
-    fprintf(stderr, "     dst: %s\n", ip_addr_ntop(&hdr->dst, addr, sizeof(addr)));
+    fprintf(stderr, "    offset: 0x%04x [flags=%x, offset=%u]\n", offset, (offset & 0xe000) >> 13, offset & 0x1fff);
+    fprintf(stderr, "       ttl: %u\n", hdr->ttl);
+    fprintf(stderr, "  protocol: %u\n", hdr->protocol);
+    fprintf(stderr, "       sum: 0x%04x\n", ntoh16(hdr->sum));
+    fprintf(stderr, "       src: %s\n", ip_addr_ntop(&hdr->src, addr, sizeof(addr)));
+    fprintf(stderr, "       dst: %s\n", ip_addr_ntop(&hdr->dst, addr, sizeof(addr)));
+#ifdef ENABLE_DUMP
     hexdump(stderr, packet, plen);
+#endif
     funlockfile(stderr);
 }
 
@@ -107,63 +105,37 @@ ip_dump(const uint8_t *packet, size_t plen)
  * IP ROUTING
  */
 
-static int
+static struct ip_route *
 ip_route_add(ip_addr_t network, ip_addr_t netmask, ip_addr_t nexthop, struct ip_iface *iface)
 {
     struct ip_route *route;
 
-    pthread_mutex_lock(&m_routes);
-    for (route = routes; route < array_tailof(routes); route++) {
-        if (!route->used) {
-            route->used = 1;
-            route->network = network;
-            route->netmask = netmask;
-            route->nexthop = nexthop;
-            route->iface = iface;
-            pthread_mutex_unlock(&m_routes);
-            return 0;
-        }
+    route = malloc(sizeof(struct ip_route));
+    if (!route) {
+        errorf("malloc() failure");
+        return NULL;
     }
-    pthread_mutex_unlock(&m_routes);
-    errorf("no free space");
-    return -1;
+    route->network = network;
+    route->netmask = netmask;
+    route->nexthop = nexthop;
+    route->iface = iface;
+    route->next = routes;
+    routes = route;
+    return route;
 }
-
-#if 0
-static int
-ip_route_del(struct ip_iface *iface)
-{
-    struct ip_route *route;
-
-    for (route = route_table; route < array_tailof(route_table); route++) {
-        if (route->used) {
-            if (route->iface == iface) {
-                route->used = 0;
-                route->network = IP_ADDR_ANY;
-                route->netmask = IP_ADDR_ANY;
-                route->nexthop = IP_ADDR_ANY;
-                route->iface = NULL;
-            }
-        }
-    }
-    return 0;
-}
-#endif
 
 static struct ip_route *
 ip_route_lookup(ip_addr_t dst)
 {
     struct ip_route *route, *candidate = NULL;
 
-    pthread_mutex_lock(&m_routes);
-    for (route = routes; route < array_tailof(routes); route++) {
-        if (route->used && (dst & route->netmask) == route->network) {
+    for (route = routes; route; route = route->next) {
+        if ((dst & route->netmask) == route->network) {
             if (!candidate || ntoh32(candidate->netmask) < ntoh32(route->netmask)) {
                 candidate = route;
             }
         }
     }
-    pthread_mutex_unlock(&m_routes);
     return candidate;
 }
 
@@ -209,7 +181,7 @@ ip_iface_register(struct net_device *dev, struct ip_iface *iface)
 {
     char addr1[IP_ADDR_STR_LEN], addr2[IP_ADDR_STR_LEN];
 
-    if (ip_route_add(iface->unicast & iface->netmask, iface->netmask, IP_ADDR_ANY, iface) == -1) {
+    if (!ip_route_add(iface->unicast & iface->netmask, iface->netmask, IP_ADDR_ANY, iface)) {
         errorf("ip_route_add() failure");
         return -1;
     }
@@ -217,10 +189,8 @@ ip_iface_register(struct net_device *dev, struct ip_iface *iface)
         errorf("net_device_add_iface() failure");
         return -1;
     }
-    pthread_mutex_lock(&m_ifaces);
     iface->next = ifaces;
     ifaces = iface;
-    pthread_mutex_unlock(&m_ifaces);
     infof("registerd: %s %s", ip_addr_ntop(&iface->unicast, addr1, sizeof(addr1)), ip_addr_ntop(&iface->netmask, addr2, sizeof(addr2)));
     return 0;
 }
@@ -230,13 +200,11 @@ ip_iface_by_addr(ip_addr_t addr)
 {
     struct ip_iface *entry;
 
-    pthread_mutex_lock(&m_ifaces);
     for (entry = ifaces; entry; entry = entry->next) {
         if (entry->unicast == addr) {
             break;
         }
     }
-    pthread_mutex_unlock(&m_ifaces);
     return entry;
 }
 
@@ -261,12 +229,16 @@ ip_set_default_gateway(struct ip_iface *iface, const char *gateway)
         errorf("ip_addr_pton() failure, gateway=%s", gateway);
         return -1;
     }
-    if (ip_route_add(IP_ADDR_ANY, IP_ADDR_ANY, gw, iface) == -1) {
+    if (!ip_route_add(IP_ADDR_ANY, IP_ADDR_ANY, gw, iface)) {
         errorf("ip_route_add() failure");
         return -1;
     }
     return 0;
 }
+
+/*
+ * IP CORE
+ */
 
 static void
 ip_input(struct net_device *dev, const uint8_t *data, size_t len)
@@ -277,7 +249,7 @@ ip_input(struct net_device *dev, const uint8_t *data, size_t len)
     struct ip_protocol *proto;
 
     if (len < sizeof(struct ip_hdr)) {
-        errorf("ip packet too small");
+        errorf("input data is too short");
         return;
     }
     hdr = (struct ip_hdr *)data;
@@ -309,16 +281,14 @@ ip_input(struct net_device *dev, const uint8_t *data, size_t len)
             return;
         }
     }
-    debugf("<%s> arrived %zd bytes data", dev->name, len);
+    debugf("%zd bytes data from <%s>", len, dev->name);
     ip_dump(data, len);
-    pthread_mutex_lock(&m_protocols);
     for (proto = protocols; proto; proto = proto->next) {
         if (proto->type == hdr->protocol) {
             proto->handler((uint8_t *)hdr + hlen, len - hlen, hdr->src, hdr->dst);
             break;
         }
     }
-    pthread_mutex_unlock(&m_protocols);
     if (!proto) {
         /* unsupported protocol */
         return;
@@ -360,7 +330,7 @@ ip_output_device(struct ip_iface *iface, uint8_t *data, size_t len, ip_addr_t ds
             return ret;
         }
     } while (0);
-    debugf("<%s> %zd bytes data to %s", NET_IFACE(iface)->dev->name, len, ip_addr_ntop(&dst, addr, sizeof(addr)));
+    debugf("%zd bytes data to %s <%s>", len, ip_addr_ntop(&dst, addr, sizeof(addr)), NET_IFACE(iface)->dev->name);
     ip_dump((uint8_t *)data, len);
     return net_device_output(NET_IFACE(iface)->dev, NET_PROTOCOL_TYPE_IP, data, len, ha);
 }
@@ -395,6 +365,7 @@ ip_output(uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t src, ip_a
     struct ip_iface *iface;
     ip_addr_t nexthop;
     struct ip_route *route;
+    char addr[IP_ADDR_STR_LEN];
     uint16_t id;
 
     if (dst == IP_ADDR_BROADCAST) {
@@ -411,7 +382,7 @@ ip_output(uint8_t protocol, const uint8_t *data, size_t len, ip_addr_t src, ip_a
     } else {
         route = ip_route_lookup(dst);
         if (!route) {
-            errorf("ip no route to host");
+            errorf("ip no route to host: %s", ip_addr_ntop(&dst, addr, sizeof(addr)));
             return -1;
         }
         if (src == IP_ADDR_ANY) {
@@ -438,26 +409,22 @@ ip_protocol_register(const char *name, uint8_t type, void (*handler)(const uint8
 {
     struct ip_protocol *entry;
 
-    pthread_mutex_lock(&m_protocols);
     for (entry = protocols; entry; entry = entry->next) {
         if (entry->type == type) {
             errorf("already registered: %s (0x%02x)", entry->name, entry->type);
-            pthread_mutex_unlock(&m_protocols);
             return -1;
         }
     }
     entry = malloc(sizeof(struct ip_protocol));
     if (!entry) {
         errorf("malloc() failure");
-        pthread_mutex_unlock(&m_protocols);
         return -1;
     }
-    entry->next = protocols;
     strncpy(entry->name, name, sizeof(entry->name)-1);
     entry->type = type;
     entry->handler = handler;
+    entry->next = protocols;
     protocols = entry;
-    pthread_mutex_unlock(&m_protocols);
     infof("registerd: %s (0x%02x)", name, type);
     return 0;
 }
@@ -465,6 +432,6 @@ ip_protocol_register(const char *name, uint8_t type, void (*handler)(const uint8
 int
 ip_init(void)
 {
-    net_protocol_register(NET_PROTOCOL_TYPE_IP, ip_input);
+    net_protocol_register("IP", NET_PROTOCOL_TYPE_IP, ip_input);
     return 0;
 }

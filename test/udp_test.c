@@ -24,26 +24,28 @@ on_signal (int s)
     terminate = 1;
 }
 
-static void
+static int
 setup(void)
-{
-    signal(SIGINT, on_signal);
-    net_init();
-    arp_init();
-    ip_init();
-    icmp_init();
-    udp_init();
-}
-
-int
-main(void)
 {
     struct net_device *dev;
     struct ip_iface *iface;
-    ip_addr_t dst;
 
-    setup();
-
+    signal(SIGINT, on_signal);
+    if (net_init() == -1) {
+        return -1;
+    }
+    if (arp_init() == -1) {
+        return -1;
+    }
+    if (ip_init() == -1) {
+        return -1;
+    }
+    if (icmp_init() == -1) {
+        return -1;
+    }
+    if (udp_init() == -1) {
+        return -1;
+    }
     dev = loopback_init();
     if (!dev) {
         return -1;
@@ -58,9 +60,23 @@ main(void)
     if (ip_iface_register(dev, iface) == -1) {
         return -1;
     }
+    net_run();
+    return 0;
+}
+
+int
+main(void)
+{
+    ip_addr_t src, dst;
+
+    if (setup() == -1) {
+        return -1;
+    }
+
+    ip_addr_pton("127.0.0.1", &src);
     ip_addr_pton("127.0.0.1", &dst);
     while (!terminate) {
-        udp_output(iface->unicast, hton16(7), data, sizeof(data), dst, hton16(7));
+        udp_output(src, hton16(7), data, sizeof(data), dst, hton16(7));
         sleep(1);
     }
     net_shutdown();

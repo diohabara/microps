@@ -72,10 +72,12 @@ ether_dump(const uint8_t *frame, size_t flen)
 
     hdr = (struct ether_hdr *)frame;
     flockfile(stderr);
-    fprintf(stderr, "  src: %s\n", ether_addr_ntop(hdr->src, addr, sizeof(addr)));
-    fprintf(stderr, "  dst: %s\n", ether_addr_ntop(hdr->dst, addr, sizeof(addr)));
-    fprintf(stderr, " type: 0x%04x (%s)\n", ntoh16(hdr->type), ether_type_ntoa(hdr->type));
+    fprintf(stderr, "   src: %s\n", ether_addr_ntop(hdr->src, addr, sizeof(addr)));
+    fprintf(stderr, "   dst: %s\n", ether_addr_ntop(hdr->dst, addr, sizeof(addr)));
+    fprintf(stderr, "  type: 0x%04x (%s)\n", ntoh16(hdr->type), ether_type_ntoa(hdr->type));
+#ifdef ENABLE_DUMP
     hexdump(stderr, frame, flen);
+#endif
     funlockfile(stderr);
 }
 
@@ -96,7 +98,7 @@ ether_transmit_helper(struct net_device *dev, uint16_t type, const uint8_t *data
     hdr->type = hton16(type);
     memcpy(hdr + 1, data, len);
     flen = sizeof(struct ether_hdr) + (len < ETHER_PAYLOAD_SIZE_MIN ? ETHER_PAYLOAD_SIZE_MIN : len);
-    debugf("<%s> %zd bytes data", dev->name, flen);
+    debugf("%zd bytes data to <%s>", flen, dev->name);
     ether_dump(frame, flen);
     return callback(dev, frame, flen) == (ssize_t)flen ? 0 : -1;
 }
@@ -110,6 +112,7 @@ ether_poll_helper(struct net_device *dev, ssize_t (*callback)(struct net_device 
 
     flen = callback(dev, frame, sizeof(frame));
     if (flen < (ssize_t)sizeof(struct ether_hdr)) {
+        errorf("input data is too short");
         return -1;
     }
     hdr = (struct ether_hdr *)frame;
@@ -119,7 +122,7 @@ ether_poll_helper(struct net_device *dev, ssize_t (*callback)(struct net_device 
             return -1;
         }
     }
-    debugf("<%s> %zd bytes data", dev->name, flen);
+    debugf("%zd bytes data from <%s>", flen, dev->name);
     ether_dump(frame, flen);
     return net_device_input(dev, ntoh16(hdr->type), (uint8_t *)(hdr + 1), flen - sizeof(struct ether_hdr));
 }

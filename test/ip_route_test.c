@@ -20,37 +20,48 @@ on_signal (int s)
     terminate = 1;
 }
 
-static void
+static int
 setup(void)
-{
-    signal(SIGINT, on_signal);
-    net_init();
-    ip_init();
-}
-
-int
-main(void)
 {
     struct net_device *dev;
     struct ip_iface *iface;
-    ip_addr_t dst;
 
-    setup();
-    dev = loopback_init();
-    if (!dev) {
+    signal(SIGINT, on_signal);
+    if (net_init() == -1) {
         return -1;
     }
-    if (dev->ops->open(dev) == -1) {
+    if (ip_init() == -1) {
+        return -1;
+    }
+    dev = loopback_init();
+    if (!dev) {
         return -1;
     }
     iface = ip_iface_alloc("127.0.0.1", "255.0.0.0");
     if (!iface) {
         return -1;
     }
-    ip_iface_register(dev, iface);
+    if (ip_iface_register(dev, iface) == -1) {
+        return -1;
+    }
+    if (dev->ops->open(dev) == -1) {
+        return -1;
+    }
+    net_run();
+    return 0;
+}
+
+int
+main(void)
+{
+    ip_addr_t dst;
+
+    if (setup() == -1) {
+        return -1;
+    }
     ip_addr_pton("127.0.0.1", &dst);
     while (!terminate) {
-        ip_output(ip_test.type, ip_test.data, ip_test.len, iface->unicast, dst);
+        ip_output(ip_test.type, ip_test.data, ip_test.len, IP_ADDR_ANY, dst);
         sleep(1);
     }
     net_shutdown();

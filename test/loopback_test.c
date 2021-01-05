@@ -19,19 +19,15 @@ on_signal (int s)
     terminate = 1;
 }
 
-static void
-setup(void)
-{
-    signal(SIGINT, on_signal);
-    net_init();
-}
-
 int
 main(void)
 {
     struct net_device *dev;
 
-    setup();
+    signal(SIGINT, on_signal);
+    if (net_init() == -1) {
+        return -1;
+    }
     dev = loopback_init();
     if (!dev) {
         return -1;
@@ -39,9 +35,11 @@ main(void)
     if (dev->ops->open(dev) == -1) {
         return -1;
     }
+    net_run();
     while (!terminate) {
         net_device_output(dev, loopback_test.type, loopback_test.data, loopback_test.len, NULL);
         sleep(1);
     }
+    net_shutdown();
     return 0;
 }

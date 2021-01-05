@@ -20,20 +20,18 @@ on_signal (int s)
     terminate = 1;
 }
 
-static void
-setup(void)
-{
-    signal(SIGINT, on_signal);
-    net_init();
-    ip_init();
-}
-
 int
 main(void)
 {
     struct net_device *dev;
 
-    setup();
+    signal(SIGINT, on_signal);
+    if (net_init() == -1) {
+        return -1;
+    }
+    if (ip_init() == -1) {
+        return -1;
+    }
     dev = loopback_init();
     if (!dev) {
         return -1;
@@ -41,6 +39,7 @@ main(void)
     if (dev->ops->open(dev) == -1) {
         return -1;
     }
+    net_run();
     while (!terminate) {
         net_device_output(dev, ip_test.type, ip_test.data, ip_test.len, NULL);
         sleep(1);

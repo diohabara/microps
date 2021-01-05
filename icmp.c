@@ -63,21 +63,23 @@ icmp_dump(const uint8_t *data, size_t len)
 
     hdr = (struct icmp_hdr *)data;
     flockfile(stderr);
-    fprintf(stderr, "   type: %u (%s)\n", hdr->type, icmp_type_ntoa(hdr->type));
-    fprintf(stderr, "   code: %u\n", hdr->code);
-    fprintf(stderr, "    sum: 0x%04x\n", ntoh16(hdr->sum));
+    fprintf(stderr, "    type: %u (%s)\n", hdr->type, icmp_type_ntoa(hdr->type));
+    fprintf(stderr, "    code: %u\n", hdr->code);
+    fprintf(stderr, "     sum: 0x%04x\n", ntoh16(hdr->sum));
     switch (hdr->type) {
     case ICMP_TYPE_ECHOREPLY:
     case ICMP_TYPE_ECHO:
         echo = (struct icmp_echo *)hdr;
-        fprintf(stderr, "     id: %u\n", ntoh16(echo->id));
-        fprintf(stderr, "    seq: %u\n", ntoh16(echo->seq));
+        fprintf(stderr, "      id: %u\n", ntoh16(echo->id));
+        fprintf(stderr, "     seq: %u\n", ntoh16(echo->seq));
         break;
     default:
-        fprintf(stderr, " values: 0x%08x\n", ntoh32(hdr->values));
+        fprintf(stderr, "  values: 0x%08x\n", ntoh32(hdr->values));
         break;
     }
+#ifdef ENABLE_DUMP
     hexdump(stderr, data, len);
+#endif
     funlockfile(stderr);
 }
 
@@ -88,6 +90,7 @@ icmp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst)
     struct icmp_hdr *hdr;
 
     if (len < sizeof(struct icmp_hdr)) {
+        errorf("input data is too short");
         return;
     }
     debugf("%s => %s (%zu byte)",

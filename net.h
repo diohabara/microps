@@ -84,14 +84,16 @@ extern int
 net_device_input(struct net_device *dev, uint16_t type, const uint8_t *data, size_t len);
 
 extern int
-net_protocol_register(uint16_t type, void (*handler)(struct net_device *dev, const uint8_t *data, size_t len));
+net_protocol_register(const char *name, uint16_t type, void (*handler)(struct net_device *dev, const uint8_t *data, size_t len));
 
 extern int
-net_timer_register(struct timeval interval, void (*handler)(void));
+net_timer_register(const char *name, struct timeval interval, void (*handler)(void));
 
 extern void
-net_shutdown(void);
+net_run(void);
 extern void
+net_shutdown(void);
+extern int
 net_init(void);
 
 #endif

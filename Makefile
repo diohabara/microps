@@ -1,12 +1,17 @@
 APPS = 
 
 TESTS = test/step0.exe \
-		test/step1.exe
+		test/step1.exe \
+		test/step2.exe \
+		test/step3.exe \
+		test/step4.exe
 
-DRIVERS = driver/null.o
+DRIVERS = driver/null.o \
+		driver/loopback.o
 
 OBJS = util.o \
-		net.o
+		net.o \
+		ip.o
 
 CFLAGS := $(CFLAGS) -g -W -Wall -Wno-unused-parameter -I .
 

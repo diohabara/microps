@@ -1,8 +1,8 @@
-#ifndef LOOPBACK_H
-#define LOOPBACK_H
+#ifndef __LOOPBACK_H_
+#define __LOOPBACK_H_
 
 #include "net.h"
 
 extern struct net_device* loopback_init(void);
 
-#endif
+#endif // __LOOPBACK_H_

@@ -36,7 +36,7 @@ int main(int argc, char *argv[]) {
   }
   while (!terminate) {
     if (net_device_output(dev, NET_PROTOCOL_TYPE_IP, test_data,
-                          sizeof(test_data), NULL) == 1) {
+                          sizeof(test_data), NULL) == -1) {
       errorf("net_device_outptu() failure");
       break;
     }

@@ -9,7 +9,7 @@
 static int null_transmit(struct net_device *dev, uint16_t type,
                          const uint8_t *data, size_t len, const void *dst)
 {
-  debugf("dev=%s, type=%s, len=%zu", dev->name,
+  debugf("dev=%s, type=0x%04x, len=%zu", dev->name,
          type, len);
   debugdump(data, len);
   /* drop data */

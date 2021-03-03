@@ -55,8 +55,8 @@ int net_device_register(struct net_device *dev) {
 }
 
 static int net_device_open(struct net_device *dev) {
-  if (!NET_DEVICE_IS_UP(dev)) {
-    errorf("not opened, dev=%s", dev->name);
+  if (NET_DEVICE_IS_UP(dev)) {
+    errorf("already open, dev=%s", dev->name);
     return -1;
   }
   if (dev->ops->open) {

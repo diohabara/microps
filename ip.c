@@ -1,7 +1,8 @@
+#include "ip.h"
+
 #include <stddef.h>
 #include <stdint.h>
 
-#include "ip.h"
 #include "net.h"
 #include "util.h"
 

@@ -3,4 +3,4 @@
 
 extern int ip_init(void);
 
-#endif // __IP_H_
+#endif  // __IP_H_

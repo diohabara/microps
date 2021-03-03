@@ -1,5 +1,2 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
-find . -iname *.h -o -iname *.c | xargs clang-format -i -style=GNU
-
+#!/bin/bash
+clang-format -i -style=Google *.c *.h

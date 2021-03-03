@@ -1,3 +1,5 @@
+#include "net.h"
+
 #include <pthread.h>
 #include <signal.h>
 #include <stdint.h>
@@ -7,7 +9,6 @@
 #include <unistd.h>
 
 #include "ip.h"
-#include "net.h"
 #include "util.h"
 
 /* NOTE: if you want to add/delete the entries after net_run(), you need to

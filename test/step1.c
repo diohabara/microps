@@ -35,8 +35,7 @@ int main(int argc, char *argv[]) {
     return -1;
   }
   while (!terminate) {
-    if (net_device_output(dev, 0x0800, test_data, sizeof(test_data), NULL) ==
-        1) {
+    if (net_device_output(dev, 0x0800, test_data, sizeof(test_data), NULL) == -1) {
       errorf("net_device_output() failure");
       break;
     }

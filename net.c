@@ -12,8 +12,8 @@
 
 /* NOTE: if you want to add/delete the entries after net_run(), you need to
  * protect these lists with a mutex */
-struct net_device *devices;
-struct net_protocol *protocols;
+static struct net_device *devices;
+static struct net_protocol *protocols;
 
 struct net_protocol {
   struct net_protocol *next;
@@ -64,7 +64,7 @@ static int net_device_open(struct net_device *dev) {
       return -1;
     }
   }
-  dev->flags |= ~NET_DEVICE_FLAG_UP;
+  dev->flags |= NET_DEVICE_FLAG_UP;
   infof("dev=%s, status=%s", dev->name, NET_DEVICE_STATE(dev));
   return 0;
 }

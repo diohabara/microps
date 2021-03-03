@@ -4,7 +4,7 @@
 #include "net.h"
 #include "util.h"
 
-#define NULL_MUT UINT16_MAX /* maximum size of IP datagram */
+#define NULL_MTU UINT16_MAX /* maximum size of IP datagram */
 
 static int null_transmit(struct net_device *dev, uint16_t type,
                          const uint8_t *data, size_t len, const void *dst)
@@ -31,7 +31,7 @@ struct net_device *null_init(void)
     return NULL;
   }
   dev->type = NET_DEVICE_TYPE_NULL;
-  dev->mtu = NULL_MUT;
+  dev->mtu = NULL_MTU;
   dev->hlen = 0; /* non header */
   dev->alen = 0; /* non address */
   dev->ops = &null_ops;

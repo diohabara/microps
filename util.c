@@ -38,9 +38,8 @@ void hexdump(FILE *fp, const void *data, size_t size) {
 
   flockfile(fp);
   src = (unsigned char *)data;
-  fprintf(fp,
-          "+------+-------------------------------------------------+------"
-          "------------+\n");
+  fprintf(fp, "+------+-------------------------------------------------+------"
+              "------------+\n");
   for (offset = 0; offset < (int)size; offset += 16) {
     fprintf(fp, "| %04x | ", offset);
     for (index = 0; index < 16; index++) {
@@ -64,9 +63,8 @@ void hexdump(FILE *fp, const void *data, size_t size) {
     }
     fprintf(fp, " |\n");
   }
-  fprintf(fp,
-          "+------+-------------------------------------------------+------"
-          "------------+\n");
+  fprintf(fp, "+------+-------------------------------------------------+------"
+              "------------+\n");
   funlockfile(fp);
 }
 

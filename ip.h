@@ -12,16 +12,16 @@
 #define IP_HDR_SIZE_MIN 20
 #define IP_HDR_SIZE_MAX 60
 
-#define IP_TOTAL_SIZE_MAX UINT16_MAX /* maximum value of uint16 */
+#define IP_TOTAL_SIZE_MAX   UINT16_MAX /* maximum value of uint16 */
 #define IP_PAYLOAD_SIZE_MAX (IP_TOTAL_SIZE_MAX - IP_HDR_SIZE_MIN)
 
-#define IP_ADDR_LEN 4
+#define IP_ADDR_LEN     4
 #define IP_ADDR_STR_LEN 16 /* "ddd.ddd.ddd.ddd\0" */
 
 /* see https://www.iana.org/assignments/protocol-numbers/protocol-numbers.txt */
 #define IP_PROTOCOL_ICMP 1
-#define IP_PROTOCOL_TCP 6
-#define IP_PROTOCOL_UDP 17
+#define IP_PROTOCOL_TCP  6
+#define IP_PROTOCOL_UDP  17
 
 typedef uint32_t ip_addr_t;
 
@@ -52,4 +52,4 @@ extern int ip_protocol_register(uint8_t type,
 
 extern int ip_init(void);
 
-#endif  // __IP_H_
+#endif // __IP_H_

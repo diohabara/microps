@@ -67,10 +67,9 @@ struct net_iface {
   struct net_device *dev;
   int family;
   /* depends on implementation of protocols. */
-}
+};
 
-extern struct net_device *
-net_device_alloc(void);
+extern struct net_device *net_device_alloc(void);
 extern int net_device_register(struct net_device *dev);
 extern int net_device_add_iface(struct net_device *dev,
                                 struct net_iface *iface);

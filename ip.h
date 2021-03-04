@@ -23,9 +23,9 @@ struct ip_iface {
   struct net_iface iface;
   struct ip_iface *next;
   ip_addr_t unicast;
-  ip_addr_t netmastk;
+  ip_addr_t netmask;
   ip_addr_t broadcast;
-}
+};
 
 extern const ip_addr_t IP_ADDR_ANY;
 extern const ip_addr_t IP_ADDR_BROADCAST;
@@ -39,4 +39,4 @@ extern struct ip_iface *ip_iface_select(ip_addr_t addr);
 
 extern int ip_init(void);
 
-#endif  // __IP_H_
+#endif // __IP_H_

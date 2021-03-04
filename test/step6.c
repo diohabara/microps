@@ -5,12 +5,14 @@
 
 #include "net.h"
 #include "util.h"
+#include "ip.h"
 
 #include "driver/loopback.h"
 
 #include "test.h"
 
 static volatile sig_atomic_t terminate;
+
 static void on_signal(int s) {
   (void)s;
   terminate = 1;

@@ -1,4 +1,4 @@
-APPS = 
+APPS =
 
 TESTS = test/step0.exe \
 		test/step1.exe \

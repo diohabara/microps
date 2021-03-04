@@ -278,5 +278,6 @@ int net_init(void) {
     errorf("ip_init() falure");
     return -1;
   }
+  /* TODO: p42 */
   return 0;
 }

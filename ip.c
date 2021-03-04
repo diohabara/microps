@@ -204,6 +204,8 @@ static void ip_input(const uint8_t *data, size_t len, struct net_device *dev) {
          ip_addr_ntop(iface->unicast, addr, sizeof(addr)), hdr->protocol,
          total);
   ip_dump(data, total);
+  /* TODO: p41 */
+  /* unsupported protocol */
 }
 
 static int ip_output_device(struct ip_iface *iface, const uint8_t *data,
@@ -279,7 +281,12 @@ ssize_t ip_output(uint8_t protocol, const uint8_t *data, size_t len,
 int ip_protocol_register(uint8_t type,
                          void (*hanlder)(const uint8_t *data, size_t len,
                                          ip_addr_t src, ip_addr_t dst,
-                                         struct ip_iface *iface)) {}
+                                         struct ip_iface *iface)) {
+  struct ip_protocol *proto;
+  /* TODO: p40 */
+  infof("registerd, type=%u", proto->type);
+  return 0;
+}
 
 int ip_init(void) {
   if (net_protocol_register(NET_PROTOCOL_TYPE_IP, ip_input) == -1) {

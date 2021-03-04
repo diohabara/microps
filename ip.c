@@ -220,7 +220,8 @@ static int ip_output_device(struct ip_iface *iface, const uint8_t *data,
       errorf("arp does not implement");
       return -1;
     }
-    /* TODO: p32 */
+    return net_device_output(NET_IFACE(iface)->dev, NET_PROTOCOL_TYPE_IP, data,
+                             len, hwaddr);
   }
 }
 
@@ -233,7 +234,20 @@ static ssize_t ip_output_core(struct ip_iface *iface, uint8_t protocol,
   char addr[IP_ADDR_STR_LEN];
 
   hdr = (struct ip_hdr *)buf;
-  /* TODO: p31*/
+  hlen = sizeof(*hdr);
+  hdr->vhl = (IP_VERSION_IPV4 << 4) | (hlen >> 2);
+  hdr->tos = 0;
+  total = hlen + len;
+  hdr->total = hton16(total);
+  hdr->id = hton16(id);
+  hdr->offset = hton16(offset);
+  hdr->ttl = 0xff;
+  hdr->protocol = protocol;
+  hdr->sum = 0;
+  hdr->src = src;
+  hdr->dst = dst;
+  hdr->sum = cksum16((uint16_t *)hdr, hlen, 0); /* don't convert bytoder */
+  memcpy(hdr + 1, data, len);
   debuf("dev=%s, iface=%s, protocol=%u, len=%u", NET_IFACE(iface)->dev->name,
         ip_addr_ntop(dst, addr, sizeof(addr)), protocol, total);
   ip_dump(buf, total);
@@ -261,7 +275,16 @@ ssize_t ip_output(uint8_t protocol, const uint8_t *data, size_t len,
     errorf("routing does no implement");
     return -1;
   } else {
-    /* TODO: p30 */
+    iface = ip_iface_select(src);
+    if (!iface) {
+      errorf("iface not found, addr=%s", ip_addr_ntop(src, addr, sizeof(addr)));
+      return -1;
+    }
+    if ((dst & iface->netmask) != (iface->unicast & iface->netmask) &&
+        dst != IP_ADDR_BROADCAST) {
+      errorf("not reached, addr=%s", ip_addr_ntop(src, addr, sizeof(addr)));
+      return -1;
+    }
   }
   if (NET_IFACE(iface)->dev->mtu < IP_HDR_SIZE_MIN + len) {
     errorf("too long, dev=%s, mtu=%u < %zu", NET_IFACE(iface)->dev->name,

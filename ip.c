@@ -204,7 +204,13 @@ static void ip_input(const uint8_t *data, size_t len, struct net_device *dev) {
          ip_addr_ntop(iface->unicast, addr, sizeof(addr)), hdr->protocol,
          total);
   ip_dump(data, total);
-  /* TODO: p41 */
+  for (proto = protocols; proto; proto = proto->next) {
+    if (proto->type == hdr->protocol) {
+      proto->handler((uint8_t *)hdr + hlen, total - hlen, hdr->src, hdr->dst,
+                     iface);
+      return;
+    }
+  }
   /* unsupported protocol */
 }
 
@@ -306,7 +312,21 @@ int ip_protocol_register(uint8_t type,
                                          ip_addr_t src, ip_addr_t dst,
                                          struct ip_iface *iface)) {
   struct ip_protocol *proto;
-  /* TODO: p40 */
+  for (entry = protocols; entry; entry = entry->next) {
+    if (entry->type == type) {
+      errorf("already exists, type=%u", type);
+      return -1;
+    }
+  }
+  entry = calloc(1, sizeof(*entry));
+  if (!entry) {
+    errorf("calloc() failure");
+    return -1;
+  }
+  entry->type = type;
+  entry->handler = handler;
+  entry->next = protocols;
+  protocols = entry;
   infof("registerd, type=%u", proto->type);
   return 0;
 }

@@ -278,6 +278,9 @@ int net_init(void) {
     errorf("ip_init() falure");
     return -1;
   }
-  /* TODO: p42 */
+  if (icmp_init() == -1) {
+    errorf("icmp_init() failure");
+    return -1;
+  }
   return 0;
 }

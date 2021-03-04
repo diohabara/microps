@@ -16,6 +16,9 @@ void icmp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst,
 }
 
 int icmp_init(void) {
-  /* TODO: p42 */
+  if (ip_protocol_register(IP_PROTOCOL_ICMP, icmp_input) == -1) {
+    errorf("ip_protocol_register() failure");
+    return -1;
+  }
   return 0;
 }

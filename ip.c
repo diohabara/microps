@@ -1,8 +1,10 @@
 #include "ip.h"
 
+#include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "net.h"
 #include "util.h"
@@ -196,6 +198,26 @@ static void ip_input(const uint8_t *data, size_t len, struct net_device *dev) {
          total);
   ip_dump(data, total);
 }
+
+static int ip_output_device(struct ip_iface *iface, const uint8_t *data,
+                            size_t len, ip_addr_t dst) {}
+
+static ssize_t ip_output_core(struct ip_iface *iface, uint8_t protocol,
+                              const uint8_t *data, size_t len, ip_addr_t src,
+                              ip_addr_t dst, uint16_t id, uint16_t offset) {}
+static uint16_t ip_generate_id(void) {
+  static pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
+  static uint16_t id = 128;
+  uint16_t ret;
+
+  pthread_mutex_lock(&mutex);
+  ret = id++;
+  pthread_mutex_unlock(&mutex);
+  return ret;
+}
+
+ssize_t ip_output(uint8_t protocol, const uint8_t *data, size_t len,
+                  ip_addr_t src, ip_addr_t dst) {}
 
 int ip_init(void) {
   if (net_protocol_register(NET_PROTOCOL_TYPE_IP, ip_input) == -1) {

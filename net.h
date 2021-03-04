@@ -88,4 +88,4 @@ extern int net_run(void);
 extern void net_shutdown(void);
 extern int net_init(void);
 
-#endif // __NET_H_
+#endif  // __NET_H_

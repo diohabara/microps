@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include "arp.h"
@@ -16,6 +17,7 @@
  * protect these lists with a mutex */
 static struct net_device *devices;
 static struct net_protocol *protocols;
+static struct net_timer *timers;
 
 struct net_protocol {
   struct net_protocol *next;
@@ -29,6 +31,13 @@ struct net_protocol {
 struct net_protocol_queue_entry {
   struct net_device *dev;
   size_t len;
+};
+
+struct net_timer {
+  struct net_timer *next;
+  struct timeval interval;
+  struct timeval last;
+  void (*handler)(void);
 };
 
 struct net_device *net_device_alloc(void) {
@@ -137,6 +146,8 @@ int net_input_handler(uint16_t type, const uint8_t *data, size_t len,
                       struct net_device *dev) {
   struct net_protocol *proto;
   struct net_protocol_queue_entry *entry;
+  struct net_timer *timer;
+  struct timeval now, diff;
   unsigned int num;
 
   for (proto = protocols; proto; proto = proto->next) {
@@ -195,6 +206,24 @@ int net_protocol_register(uint16_t type,
   return 0;
 }
 
+/* NOTE: must not be called after net_run() */
+int net_timer_register(struct timeval interval, void (*handler)(void)) {
+  struct net_timer *timer;
+
+  tiemr = calloc(1, sizeof(*timer));
+  if (!timer) {
+    errorf("calloc() failure");
+    return -1;
+  }
+  timer->interval = interval;
+  gettimeofday(&timer->last, NULL);
+  timer->handler = handler;
+  timer->next = timers;
+  timers = timer;
+  infof("registered: interval={%d, %d}", interval.tv_sec, interval.tv_usec);
+  return 0;
+}
+
 #define NET_THREAD_SLEEP_TIME 1000 /* micro seconds */
 
 static pthread_t thread;
@@ -229,6 +258,15 @@ static void *net_thread(void *arg) {
         proto->handler((uint8_t *)(entry + 1), entry->len, entry->dev);
         free(entry);
         count++;
+      }
+    }
+    if (timer = timers; timer; timer = timer->next) {
+      gettimeofday(&now, NULL);
+      timersub(&now, &timer->last, &diff);
+      if (timercmp(&timer->interval, &diff, <) !=
+          0) { /* true(!0) or false (0) */
+        timer->handler();
+        timer->last = now;
       }
     }
     if (!count) {

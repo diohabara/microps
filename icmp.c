@@ -2,9 +2,12 @@
 
 #include <stddef.h>
 #include <stdint.h>
+#include <string.h>
 
 #include "ip.h"
 #include "util.h"
+
+#define ICMP_BUFSIZ IP_PAYLOAD_SIZE_MAX
 
 struct icmp_hdr {
   uint8_t type;
@@ -92,9 +95,14 @@ void icmp_input(const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst,
            ntoh16(cksum16((uint16_t *)data, len, -hdr->sum)));
     return;
   }
+
   debugf("%s => %s, len=%zu", ip_addr_ntop(src, addr1, sizeof(addr1)),
          ip_addr_ntop(dst, addr2, sizeof(addr2)), len);
   icmp_dump(data, len);
+}
+
+int icmp_output(uint8_t type, uint8_t code, uint32_t values,
+                const uint8_t *data, size_t len, ip_addr_t src, ip_addr_t dst) {
 }
 
 int icmp_init(void) {

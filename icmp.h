@@ -1,6 +1,11 @@
 #ifndef __ICMP_H_
 #define __ICMP_H_
 
+#include <stddef.h>
+#include <stdint.h>
+
+#include "ip.h"
+
 #define ICMP_HDR_SIZE 8
 
 #define ICMP_TYPE_ECHOREPLY      0
@@ -15,6 +20,9 @@
 #define ICMP_TYPE_INFO_REQUEST   15
 #define ICMP_TYPE_INFO_REPLY     16
 
+extern int icmp_output(uint8_t type, uint8_t code, uint32_t values,
+                       const uint8_t *data, size_t len, ip_addr_t src,
+                       ip_adr_t dst);
 extern int icmp_init(void);
 
 #endif // __ICMP_H_

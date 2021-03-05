@@ -8,6 +8,7 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "arp.h"
 #include "ip.h"
 #include "util.h"
 
@@ -274,6 +275,10 @@ void net_shutdown(void) {
 }
 
 int net_init(void) {
+  if (arp_init() == -1) {
+    errof("arp_init() failure");
+    return -1;
+  }
   if (ip_init() == -1) {
     errorf("ip_init() falure");
     return -1;

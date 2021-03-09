@@ -1,6 +1,7 @@
 #ifndef __NET_H_
 #define __NET_H_
 
+#include <signal.h>
 #include <stddef.h>
 #include <stdint.h>
 
@@ -85,6 +86,12 @@ extern int net_protocol_register(uint16_t type,
                                                  size_t len,
                                                  struct net_device *dev));
 extern int net_timer_register(struct timeval itnerval, void (*handler)(void));
+
+extern int net_interrupt(void);
+extern struct net_interrupts_ctx *net_interrupts_subscribe(void);
+extern int net_interrupt_occurred(struct net_interrupt_ctx *ctx);
+extern int net_interrupt_unsubscibe(struct net_interrupt_ctx *ctx);
+
 extern int net_run(void);
 extern void net_shutdown(void);
 extern int net_init(void);
